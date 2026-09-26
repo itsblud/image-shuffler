@@ -6,26 +6,28 @@ on:
     - cron: "17 3 * * 0"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    permissions:
+      contents: write
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Build catalog from Wayback Machine
-        shell: bash
+        shell: python
         run: |
-          python - <<'PYCODE'
+          import concurrent.futures
           import json
           import random
           import re
@@ -34,8 +36,6 @@ jobs:
           import urllib.parse
           import urllib.request
 
-          # General-purpose photo/image hosts and old personal-web hosts.
-          # Imgur is absent because it launched in 2009, beyond this app's hard cutoff.
           SOURCES = [
               ("GeoCities", "geocities.com", 1994),
               ("Photo.net", "photo.net", 1994),
@@ -60,10 +60,10 @@ jobs:
               re.I,
           )
           JPEG = re.compile(r"\.(?:jpe?g)(?:[?#].*)?$", re.I)
-          UA = "Mozilla/5.0 (compatible; OldImageShuffler/1.0)"
+          UA = "Mozilla/5.0 (compatible; OldImageShuffler/1.1)"
 
-          def get_json(url, retries=3):
-              delay = 2
+          def fetch_json(url, retries=2):
+              delay = 1.5
               for attempt in range(retries):
                   try:
                       req = urllib.request.Request(
@@ -73,33 +73,33 @@ jobs:
                               "Accept": "application/json,text/plain,*/*",
                           },
                       )
-                      with urllib.request.urlopen(req, timeout=30) as r:
+                      with urllib.request.urlopen(req, timeout=18) as r:
                           return json.loads(r.read().decode("utf-8", "replace"))
-                  except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                  except Exception:
                       if attempt == retries - 1:
                           raise
                       time.sleep(delay)
                       delay *= 2
 
-          def query(domain, year):
+          def query_block(source, domain, start_year, end_year):
               params = [
                   ("url", domain),
                   ("matchType", "domain"),
                   ("output", "json"),
                   ("fl", "timestamp,original,mimetype,statuscode,digest,length"),
-                  ("from", f"{year:04d}0101"),
-                  ("to", f"{year:04d}1231"),
+                  ("from", f"{start_year:04d}0101"),
+                  ("to", f"{end_year:04d}1231"),
                   ("filter", "statuscode:200"),
                   ("filter", "mimetype:image/jpeg"),
-                  ("collapse", "urlkey"),
-                  ("limit", "300"),
+                  ("collapse", "digest"),
+                  ("limit", "500"),
               ]
               url = "https://web.archive.org/cdx/search/cdx?" + urllib.parse.urlencode(params)
 
               try:
-                  rows = get_json(url)
+                  rows = fetch_json(url)
               except Exception as e:
-                  print(f"skip {domain} {year}: {e}")
+                  print(f"skip {source} {start_year}-{end_year}: {e}")
                   return []
 
               if not rows or len(rows) < 2:
@@ -113,70 +113,82 @@ jobs:
                   ts, original, mime, status, digest, length = row[:6]
 
                   try:
+                      year = int(ts[:4])
                       size = int(length or 0)
                   except Exception:
-                      size = 0
+                      continue
 
+                  if year < 1994 or year > 2008:
+                      continue
                   if not JPEG.search(original):
                       continue
                   if BAD.search(original):
                       continue
                   if mime != "image/jpeg":
                       continue
-
-                  # Eliminate most tracking pixels, thumbnails and tiny site furniture.
                   if size and size < 18000:
                       continue
 
                   out.append({
-                      "year": int(ts[:4]),
+                      "year": year,
+                      "source": source,
                       "original": original,
                       "archive": f"https://web.archive.org/web/{ts}id_/{original}",
                   })
 
               return out
 
-          random.seed()
+          jobs = []
+          for source, domain, born in SOURCES:
+              first = max(1994, born)
+              y = first
+              while y <= 2008:
+                  jobs.append((source, domain, y, min(y + 2, 2008)))
+                  y += 3
+
+          all_rows = []
+          # Limited concurrency keeps the run fast without hammering Wayback.
+          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+              futures = [pool.submit(query_block, *job) for job in jobs]
+              for future in concurrent.futures.as_completed(futures):
+                  try:
+                      all_rows.extend(future.result())
+                  except Exception as e:
+                      print("worker error:", e)
+
+          # Deduplicate and balance by source/year so one host cannot dominate.
+          buckets = {}
+          seen = set()
+
+          random.shuffle(all_rows)
+
+          for item in all_rows:
+              key = item["original"].lower()
+              if key in seen:
+                  continue
+              seen.add(key)
+
+              bucket = (item["source"], item["year"])
+              buckets.setdefault(bucket, [])
+              if len(buckets[bucket]) < 15:
+                  buckets[bucket].append(item)
+
           catalog = []
-          seen_originals = set()
-
-          for name, domain, born in SOURCES:
-              for year in range(max(1994, born), 2009):
-                  rows = query(domain, year)
-                  random.shuffle(rows)
-
-                  # Balance the catalog so one giant host/year cannot dominate.
-                  kept = 0
-                  for item in rows:
-                      original_key = item["original"].lower()
-                      if original_key in seen_originals:
-                          continue
-
-                      seen_originals.add(original_key)
-                      item["source"] = name
-                      catalog.append(item)
-                      kept += 1
-
-                      if kept >= 20:
-                          break
-
-                  time.sleep(0.35)
+          for items in buckets.values():
+              catalog.extend(items)
 
           random.shuffle(catalog)
-
-          # Keep catalog small enough for quick loading on iPhone.
           catalog = catalog[:3000]
-
-          with open("catalog.json", "w", encoding="utf-8") as f:
-              json.dump(catalog, f, separators=(",", ":"))
 
           print("catalog size:", len(catalog))
 
           if len(catalog) < 25:
               raise RuntimeError(
-                  "Wayback returned too few usable images; refusing to replace a good catalog."
+                  "Wayback returned too few usable images; catalog was not replaced."
               )
-          PYCODE
+
+          with open("catalog.json", "w", encoding="utf-8") as f:
+              json.dump(catalog, f, separators=(",", ":"))
 
       - name: Commit refreshed catalog
         run: |
