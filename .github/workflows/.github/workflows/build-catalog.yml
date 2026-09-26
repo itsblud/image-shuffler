@@ -1,0 +1,188 @@
+name: Build image catalog
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 0"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build catalog from Wayback Machine
+        shell: bash
+        run: |
+          python - <<'PYCODE'
+          import json
+          import random
+          import re
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          # General-purpose photo/image hosts and old personal-web hosts.
+          # Imgur is absent because it launched in 2009, beyond this app's hard cutoff.
+          SOURCES = [
+              ("GeoCities", "geocities.com", 1994),
+              ("Photo.net", "photo.net", 1994),
+              ("Webshots", "webshots.com", 1995),
+              ("Tripod", "tripod.com", 1995),
+              ("Angelfire", "angelfire.com", 1996),
+              ("Fotki", "fotki.com", 1998),
+              ("PictureTrail", "picturetrail.com", 1998),
+              ("PBase", "pbase.com", 1999),
+              ("SmugMug", "smugmug.com", 2002),
+              ("Photobucket", "photobucket.com", 2003),
+              ("ImageShack", "imageshack.us", 2003),
+              ("TinyPic", "tinypic.com", 2004),
+              ("Flickr", "static.flickr.com", 2004),
+              ("Zooomr", "zooomr.com", 2005),
+          ]
+
+          BAD = re.compile(
+              r"(avatar|banner|button|icon|logo|pixel|spacer|tracker|counter|"
+              r"smiley|emoticon|sprite|thumb|thumbnail|favicon|advert|adserver|"
+              r"badge|toolbar|header|footer|nav|menu)",
+              re.I,
+          )
+          JPEG = re.compile(r"\.(?:jpe?g)(?:[?#].*)?$", re.I)
+          UA = "Mozilla/5.0 (compatible; OldImageShuffler/1.0)"
+
+          def get_json(url, retries=3):
+              delay = 2
+              for attempt in range(retries):
+                  try:
+                      req = urllib.request.Request(
+                          url,
+                          headers={
+                              "User-Agent": UA,
+                              "Accept": "application/json,text/plain,*/*",
+                          },
+                      )
+                      with urllib.request.urlopen(req, timeout=30) as r:
+                          return json.loads(r.read().decode("utf-8", "replace"))
+                  except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                      if attempt == retries - 1:
+                          raise
+                      time.sleep(delay)
+                      delay *= 2
+
+          def query(domain, year):
+              params = [
+                  ("url", domain),
+                  ("matchType", "domain"),
+                  ("output", "json"),
+                  ("fl", "timestamp,original,mimetype,statuscode,digest,length"),
+                  ("from", f"{year:04d}0101"),
+                  ("to", f"{year:04d}1231"),
+                  ("filter", "statuscode:200"),
+                  ("filter", "mimetype:image/jpeg"),
+                  ("collapse", "urlkey"),
+                  ("limit", "300"),
+              ]
+              url = "https://web.archive.org/cdx/search/cdx?" + urllib.parse.urlencode(params)
+
+              try:
+                  rows = get_json(url)
+              except Exception as e:
+                  print(f"skip {domain} {year}: {e}")
+                  return []
+
+              if not rows or len(rows) < 2:
+                  return []
+
+              out = []
+              for row in rows[1:]:
+                  if len(row) < 6:
+                      continue
+
+                  ts, original, mime, status, digest, length = row[:6]
+
+                  try:
+                      size = int(length or 0)
+                  except Exception:
+                      size = 0
+
+                  if not JPEG.search(original):
+                      continue
+                  if BAD.search(original):
+                      continue
+                  if mime != "image/jpeg":
+                      continue
+
+                  # Eliminate most tracking pixels, thumbnails and tiny site furniture.
+                  if size and size < 18000:
+                      continue
+
+                  out.append({
+                      "year": int(ts[:4]),
+                      "original": original,
+                      "archive": f"https://web.archive.org/web/{ts}id_/{original}",
+                  })
+
+              return out
+
+          random.seed()
+          catalog = []
+          seen_originals = set()
+
+          for name, domain, born in SOURCES:
+              for year in range(max(1994, born), 2009):
+                  rows = query(domain, year)
+                  random.shuffle(rows)
+
+                  # Balance the catalog so one giant host/year cannot dominate.
+                  kept = 0
+                  for item in rows:
+                      original_key = item["original"].lower()
+                      if original_key in seen_originals:
+                          continue
+
+                      seen_originals.add(original_key)
+                      item["source"] = name
+                      catalog.append(item)
+                      kept += 1
+
+                      if kept >= 20:
+                          break
+
+                  time.sleep(0.35)
+
+          random.shuffle(catalog)
+
+          # Keep catalog small enough for quick loading on iPhone.
+          catalog = catalog[:3000]
+
+          with open("catalog.json", "w", encoding="utf-8") as f:
+              json.dump(catalog, f, separators=(",", ":"))
+
+          print("catalog size:", len(catalog))
+
+          if len(catalog) < 25:
+              raise RuntimeError(
+                  "Wayback returned too few usable images; refusing to replace a good catalog."
+              )
+          PYCODE
+
+      - name: Commit refreshed catalog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Refresh image catalog"
+          git push
