@@ -29,10 +29,7 @@ html,body{
 }
 
 button,input,select,label{font:inherit}
-
-button{
-  color:inherit;
-}
+button{color:inherit}
 
 #app{
   position:relative;
@@ -40,12 +37,6 @@ button{
   height:100svh;
   background:var(--bg);
 }
-
-/* ------------------------------
-   W810i-inspired status row.
-   These pieces are intentionally blocky/pixel-built.
-   The photograph itself is never pixelated.
-   ------------------------------ */
 
 #statusbar{
   position:absolute;
@@ -62,9 +53,7 @@ button{
   transition:opacity .18s linear;
 }
 
-.pixel-icon{
-  image-rendering:pixelated;
-}
+.pixel-icon{image-rendering:pixelated}
 
 .signal{
   justify-self:start;
@@ -80,7 +69,6 @@ button{
   width:4px;
   background:currentColor;
 }
-
 .signal span:nth-child(1){height:4px}
 .signal span:nth-child(2){height:7px}
 .signal span:nth-child(3){height:10px}
@@ -104,9 +92,7 @@ button{
   cursor:pointer;
 }
 
-.status-settings:active{
-  transform:translate(1px,1px);
-}
+.status-settings:active{transform:translate(1px,1px)}
 
 .battery{
   justify-self:end;
@@ -135,15 +121,10 @@ button{
   background:currentColor;
 }
 
-/* ------------------------------
-   Image stage.
-   No fake phone shell. No image processing.
-   ------------------------------ */
-
 #frame{
   position:absolute;
   top:max(48px,calc(env(safe-area-inset-top) + 42px));
-  bottom:max(56px,calc(env(safe-area-inset-bottom) + 50px));
+  bottom:max(66px,calc(env(safe-area-inset-bottom) + 60px));
   left:max(12px,env(safe-area-inset-left));
   right:max(12px,env(safe-area-inset-right));
   display:flex;
@@ -162,7 +143,6 @@ button{
   object-fit:contain;
 }
 
-/* The loading state occupies the image area itself. */
 #loader{
   display:flex;
   align-items:center;
@@ -180,7 +160,6 @@ button{
   opacity:.18;
   animation:dotPulse 1.05s steps(1,end) infinite;
 }
-
 #loader span:nth-child(2){animation-delay:.18s}
 #loader span:nth-child(3){animation-delay:.36s}
 
@@ -199,21 +178,19 @@ button{
   line-height:1.4;
 }
 
-/* ------------------------------
-   Bottom soft keys.
-   Visually tiny; tap targets remain generous.
-   ------------------------------ */
-
+/* Option 1: segmented retro bottom bar */
 #nav{
   position:absolute;
   z-index:5;
   left:max(12px,env(safe-area-inset-left));
   right:max(12px,env(safe-area-inset-right));
-  bottom:max(7px,env(safe-area-inset-bottom));
-  height:43px;
+  bottom:max(10px,env(safe-area-inset-bottom));
+  height:44px;
   display:grid;
   grid-template-columns:1fr 72px 1fr;
-  align-items:center;
+  align-items:stretch;
+  background:var(--bg);
+  border:2px solid var(--fg);
   transition:opacity .18s linear;
 }
 
@@ -225,18 +202,23 @@ button{
   box-shadow:none;
   border-radius:0;
   min-width:44px;
-  min-height:42px;
-  padding:0;
+  min-height:40px;
+  padding:0 10px;
   cursor:pointer;
+  width:100%;
+  height:100%;
+}
+
+#back,
+#play{
+  border-right:2px solid var(--fg);
 }
 
 #nav button:active{
   transform:translate(1px,1px);
 }
 
-#nav button:disabled{
-  opacity:.25;
-}
+#nav button:disabled{opacity:.25}
 
 .softkey{
   font-size:16px;
@@ -245,18 +227,10 @@ button{
   letter-spacing:-1px;
 }
 
-#back{
-  justify-self:start;
-  text-align:left;
-}
-
-#next{
-  justify-self:end;
-  text-align:right;
-}
+#back{text-align:left}
+#next{text-align:right}
 
 .play-softkey{
-  justify-self:center;
   position:relative;
   display:flex;
   align-items:center;
@@ -272,7 +246,6 @@ button{
   border-left:12px solid currentColor;
 }
 
-/* During auto-play, the same control becomes a low-res pause glyph. */
 #play.is-playing .play-glyph{
   width:13px;
   height:16px;
@@ -290,14 +263,7 @@ body.autoplay-running #nav{
   pointer-events:none;
 }
 
-body.autoplay-running #frame{
-  cursor:pointer;
-}
-
-/* ------------------------------
-   Existing settings panel.
-   Kept functional, but visually simplified.
-   ------------------------------ */
+body.autoplay-running #frame{cursor:pointer}
 
 #overlay{
   position:fixed;
@@ -306,7 +272,6 @@ body.autoplay-running #frame{
   z-index:20;
   background:var(--scrim);
 }
-
 #overlay.open{display:block}
 
 #panel{
@@ -337,7 +302,6 @@ body.autoplay-running #frame{
 }
 
 .section{margin:0 0 18px}
-
 .section h3{
   margin:0 0 10px;
   font-size:12px;
@@ -379,7 +343,6 @@ input[type=range]{
   min-height:30px;
   font-size:12px;
 }
-
 .checkitem input{transform:scale(1.05)}
 
 select,
@@ -423,12 +386,14 @@ select{min-height:34px;padding:4px 8px}
   #frame{
     left:max(8px,env(safe-area-inset-left));
     right:max(8px,env(safe-area-inset-right));
+    bottom:max(60px,calc(env(safe-area-inset-bottom) + 54px));
   }
 
   #nav{
     left:max(11px,env(safe-area-inset-left));
     right:max(11px,env(safe-area-inset-right));
     grid-template-columns:1fr 64px 1fr;
+    height:42px;
   }
 
   .status-settings,
@@ -436,7 +401,5 @@ select{min-height:34px;padding:4px 8px}
     font-size:15px;
   }
 
-  .checkgrid{
-    grid-template-columns:1fr;
-  }
+  .checkgrid{grid-template-columns:1fr}
 }
