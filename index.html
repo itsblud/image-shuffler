@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; img-src https://web.archive.org https://upload.wikimedia.org; style-src 'sha256-DX8uVLTVWdI5PsEd56vHWpJTGE8Am8LJCox7n8pq+ik='; script-src 'sha256-QyFH2MP1vCYR7xrMx0yBXMhP+sSXjDv2j3gzNkVV1z0='; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>Image Shuffler</title>
-<style>
-*{box-sizing:border-box}
+<style>*{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif}
 #app{height:100dvh;display:grid;grid-template-rows:1fr auto;background:#000}
 #stage{min-height:0;display:grid;place-items:center;padding:max(10px,env(safe-area-inset-top)) 10px 8px;cursor:pointer}
@@ -20,8 +21,7 @@ button:disabled{opacity:.35}
 #panel{width:min(88vw,420px);background:#111;border:1px solid #333;border-radius:16px;padding:20px;color:#fff}
 #years{text-align:center;font-size:22px;font-weight:700;margin-bottom:14px}
 input[type=range]{width:100%;margin:14px 0}
-#done{width:100%;margin-top:10px}
-</style>
+#done{width:100%;margin-top:10px}</style>
 </head>
 <body>
 <div id="app">
@@ -34,7 +34,6 @@ input[type=range]{width:100%;margin:14px 0}
     <button id="next">Next</button>
   </div>
 </div>
-
 <div id="overlay">
   <div id="panel">
     <div id="years"></div>
@@ -43,9 +42,7 @@ input[type=range]{width:100%;margin:14px 0}
     <button id="done">Done</button>
   </div>
 </div>
-
-<script>
-const img=document.querySelector('#image');
+<script>const img=document.querySelector('#image');
 const msg=document.querySelector('#message');
 const stage=document.querySelector('#stage');
 const back=document.querySelector('#back');
@@ -56,11 +53,17 @@ const to=document.querySelector('#to');
 const years=document.querySelector('#years');
 const done=document.querySelector('#done');
 
+const MIN_WIDTH=240;
+const MIN_HEIGHT=180;
+const MAX_ATTEMPTS_PER_NEXT=12;
+
 let catalog=[];
 let filtered=[];
+let queue=[];
 let history=[];
 let index=-1;
 let requestToken=0;
+let failed=new Set();
 
 function readSavedRange(){
   try{
@@ -94,70 +97,83 @@ function setMessage(text){
   msg.textContent=text;
 }
 
+function shuffle(items){
+  const a=items.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+
 function filterCatalog(){
   const[a,b]=normalizedRange();
   filtered=catalog.filter(x=>{
     const y=Number(x.year);
-    return y>=a&&y<=b&&typeof x.archive==='string'&&x.archive.startsWith('https://web.archive.org/');
+    return y>=a&&y<=b&&typeof x.archive==='string'&&(
+      x.archive.startsWith('https://web.archive.org/')||
+      x.archive.startsWith('https://upload.wikimedia.org/')
+    );
   });
+  queue=shuffle(filtered);
+  failed.clear();
 }
 
-function randomCandidate(){
-  if(!filtered.length)return null;
-  return filtered[Math.floor(Math.random()*filtered.length)];
+function refillQueue(){
+  queue=shuffle(filtered.filter(x=>!failed.has(x.archive)));
 }
 
-function preload(url,timeoutMs=12000){
+function preload(item,timeoutMs=12000){
   return new Promise((resolve,reject)=>{
     const test=new Image();
     let settled=false;
-    const finish=(ok)=>{
+    const finish=(ok,reason)=>{
       if(settled)return;
       settled=true;
       clearTimeout(timer);
       test.onload=null;
       test.onerror=null;
-      ok?resolve(url):reject(new Error('image failed'));
+      ok?resolve({item,url:test.src,width:test.naturalWidth,height:test.naturalHeight})
+        :reject(new Error(reason||'image failed'));
     };
-    const timer=setTimeout(()=>finish(false),timeoutMs);
-    test.onload=()=>finish(true);
-    test.onerror=()=>finish(false);
+    const timer=setTimeout(()=>finish(false,'timeout'),timeoutMs);
+    test.onload=()=>{
+      if(test.naturalWidth<MIN_WIDTH||test.naturalHeight<MIN_HEIGHT){
+        finish(false,'too small');
+      }else{
+        finish(true);
+      }
+    };
+    test.onerror=()=>finish(false,'image failed');
     test.referrerPolicy='no-referrer';
-    test.src=url;
+    test.src=item.archive;
   });
 }
 
-async function findWorkingImage(maxAttempts=8){
+async function findNextWorkingImage(){
   const token=++requestToken;
-  if(!filtered.length)throw new Error('empty');
-
-  const tried=new Set();
-  for(let i=0;i<maxAttempts;i++){
+  for(let attempt=0;attempt<MAX_ATTEMPTS_PER_NEXT;attempt++){
     if(token!==requestToken)throw new Error('cancelled');
-    let item=randomCandidate();
-    if(!item)break;
-
-    // Avoid immediately retrying the same candidate within this request.
-    let guard=0;
-    while(tried.has(item.archive)&&guard++<20)item=randomCandidate();
-    tried.add(item.archive);
-
+    if(!queue.length)refillQueue();
+    if(!queue.length)throw new Error('empty');
+    const item=queue.pop();
     try{
-      await preload(item.archive);
+      const loaded=await preload(item);
       if(token!==requestToken)throw new Error('cancelled');
-      return item;
+      return loaded;
     }catch(e){
       if(e.message==='cancelled')throw e;
+      failed.add(item.archive);
     }
   }
   throw new Error('unavailable');
 }
 
-function render(item){
-  if(!item)return;
+function render(entry){
+  if(!entry)return;
   msg.style.display='none';
   img.style.display='block';
-  img.src=item.archive;
+  img.src=entry.url||entry.item.archive;
   back.disabled=index<=0;
 }
 
@@ -167,19 +183,19 @@ async function nextImage(){
     render(history[index]);
     return;
   }
-
   next.disabled=true;
   setMessage('Finding image…');
-
   try{
-    const item=await findWorkingImage();
+    const entry=await findNextWorkingImage();
     history=history.slice(0,index+1);
-    history.push(item);
+    history.push(entry);
     index=history.length-1;
-    render(item);
+    render(entry);
   }catch(e){
     if(e.message!=='cancelled'){
-      setMessage('No working image found. Tap Next to try again.');
+      setMessage(e.message==='empty'
+        ?'No usable images in this date range.'
+        :'No working image found. Tap Next to try again.');
     }
   }finally{
     next.disabled=false;
@@ -196,7 +212,6 @@ back.onclick=()=>{
 };
 
 next.onclick=nextImage;
-
 stage.onclick=()=>overlay.classList.add('open');
 
 done.onclick=()=>{
@@ -210,7 +225,6 @@ done.onclick=()=>{
   index=-1;
   filterCatalog();
   back.disabled=true;
-
   if(!filtered.length){
     setMessage('No images in this date range.');
     return;
@@ -224,26 +238,25 @@ overlay.onclick=e=>{
 
 async function boot(){
   try{
-    const r=await fetch('./catalog.json?v='+Date.now(),{cache:'no-store'});
+    const r=await fetch('./catalog.json?v='+Date.now(),{
+      cache:'no-store',
+      credentials:'same-origin',
+      redirect:'error'
+    });
     if(!r.ok)throw new Error('catalog http');
     const data=await r.json();
     if(!Array.isArray(data)||!data.length)throw new Error('catalog empty');
-
     catalog=data;
     filterCatalog();
-
     if(!filtered.length){
       setMessage('No images in this date range. Tap here to change the range.');
       return;
     }
     nextImage();
-  }catch(e){
+  }catch{
     setMessage('Image catalog is not ready yet. Tap here to change dates.');
   }
 }
-
-boot();
-</script>
+boot();</script>
 </body>
 </html>
-<!-- redeploy -->
