@@ -7,7 +7,7 @@ const frameEl = $('#frame');
 const backBtn = $('#back');
 const playBtn = $('#play');
 const nextBtn = $('#next');
-const counterEl = $('#counter');
+const loaderEl = $('#loader');
 
 const overlay = $('#overlay');
 const openControlsBtn = $('#openControls');
@@ -167,8 +167,15 @@ function readControlsIntoPrefs() {
   }
 }
 
+function setLoading() {
+  imageEl.style.display = 'none';
+  messageEl.style.display = 'none';
+  loaderEl.style.display = 'flex';
+}
+
 function setMessage(text) {
   imageEl.style.display = 'none';
+  loaderEl.style.display = 'none';
   messageEl.style.display = 'block';
   messageEl.textContent = text;
 }
@@ -379,17 +386,13 @@ async function takePreparedEntry() {
   return entry;
 }
 
-function updateCounter() {
-  counterEl.textContent = history.length ? `${historyIndex + 1}` : '';
-}
-
 function render(entry) {
   if (!entry) return;
+  loaderEl.style.display = 'none';
   messageEl.style.display = 'none';
   imageEl.style.display = 'block';
   imageEl.src = entry.url;
   backBtn.disabled = historyIndex <= 0;
-  updateCounter();
   scheduleAutoplay();
 }
 
@@ -404,7 +407,7 @@ async function advance() {
   }
 
   nextBtn.disabled = true;
-  setMessage('Finding image…');
+  setLoading();
 
   try {
     const entry = await takePreparedEntry();
@@ -467,7 +470,8 @@ function scheduleAutoplay() {
 function playAutoplay() {
   if (!history.length) return;
   autoplayRunning = true;
-  playBtn.textContent = 'Pause';
+  playBtn.classList.add('is-playing');
+  playBtn.setAttribute('aria-label', 'Pause auto-play');
   scheduleAutoplay();
 }
 
@@ -475,7 +479,8 @@ function pauseAutoplay(showChrome = true) {
   autoplayRunning = false;
   clearAutoplayTimer();
   clearChromeTimer();
-  playBtn.textContent = 'Play';
+  playBtn.classList.remove('is-playing');
+  playBtn.setAttribute('aria-label', 'Play auto-play');
   if (showChrome) document.body.classList.remove('autoplay-running');
 }
 
@@ -541,6 +546,7 @@ yearToEl.addEventListener('input', updateYearLabel);
 async function boot() {
   applyTheme();
   syncControlsFromPrefs();
+  setLoading();
 
   try {
     await loadManifest();
