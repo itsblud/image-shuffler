@@ -1,4 +1,4 @@
-name: Build image catalog
+name: Build catalog
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: write
 
@@ -24,286 +24,17 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build catalog
-        shell: python
-        run: |
-          import concurrent.futures, json, random, re, time, urllib.parse, urllib.request
+      - name: Install image decoder
+        run: python -m pip install --disable-pip-version-check Pillow
 
-          MIN_SHORT_SIDE, MIN_LONG_SIDE = 200, 300
+      - name: Build regional catalog
+        run: python build_catalog.py
 
-          WAYBACK_SOURCES = [
-              ("GeoCities", "geocities.com", 1994),
-              ("Photo.net", "photo.net", 1994),
-              ("Webshots", "webshots.com", 1995),
-              ("Tripod", "tripod.com", 1995),
-              ("Angelfire", "angelfire.com", 1996),
-              ("Fotki", "fotki.com", 1998),
-              ("PictureTrail", "picturetrail.com", 1998),
-              ("PBase", "pbase.com", 1999),
-              ("SmugMug", "smugmug.com", 2002),
-              ("Photobucket", "photobucket.com", 2003),
-              ("ImageShack", "imageshack.us", 2003),
-              ("TinyPic", "tinypic.com", 2004),
-              ("Flickr", "static.flickr.com", 2004),
-              ("Zooomr", "zooomr.com", 2005),
-          ]
-
-          BAD_ASSET = re.compile(
-              r"(avatar|banner|button|icon|logo|pixel|spacer|tracker|counter|"
-              r"smiley|emoticon|sprite|thumb|thumbnail|favicon|advert|adserver|"
-              r"badge|toolbar|header|footer|nav|menu)",
-              re.I,
-          )
-
-          JPEG = re.compile(r"\.(?:jpe?g)(?:[?#].*)?$", re.I)
-          UA = "OldImageShuffler/1.5"
-
-          TAG_PATTERNS = [
-              ("landscape", re.compile(r"(?:^|[/_\-\s])(landscape|scenery|scenic|mountain|mountains|sunset|sunrise|waterfall|countryside|seascape|forest|beach|river|lake|nature)(?:$|[/_\-\s])", re.I)),
-              ("flowers", re.compile(r"(?:^|[/_\-\s])(flowers?|floral|blossom|rose|tulip|orchid|botanical|plant|plants)(?:$|[/_\-\s])", re.I)),
-              ("architecture", re.compile(r"(?:^|[/_\-\s])(architecture|architectural|buildings?|church|cathedral|castle|skyscraper|bridge|monument|facade|façade|house|temple)(?:$|[/_\-\s])", re.I)),
-              ("animals", re.compile(r"(?:^|[/_\-\s])(animal|animals|dog|dogs|cat|cats|bird|birds|horse|horses|pet|pets|wildlife|zoo)(?:$|[/_\-\s])", re.I)),
-              ("vehicles", re.compile(r"(?:^|[/_\-\s])(car|cars|automobile|truck|trucks|bus|buses|train|trains|tram|motorcycle|bike|bicycle|airplane|plane|vehicle|vehicles)(?:$|[/_\-\s])", re.I)),
-          ]
-
-          def fetch_json(url, retries=3):
-              delay = 1.5
-              for attempt in range(retries):
-                  try:
-                      req = urllib.request.Request(
-                          url,
-                          headers={"User-Agent": UA, "Accept": "application/json,text/plain,*/*"},
-                      )
-                      with urllib.request.urlopen(req, timeout=22) as r:
-                          return json.loads(r.read().decode("utf-8", "replace"))
-                  except Exception:
-                      if attempt == retries - 1:
-                          raise
-                      time.sleep(delay)
-                      delay *= 2
-
-          def canonical_name(value):
-              try:
-                  name = urllib.parse.unquote(
-                      urllib.parse.urlparse(value).path.rsplit("/", 1)[-1]
-                  ).lower()
-              except Exception:
-                  name = str(value).lower()
-
-              name = re.sub(r"\.(?:jpe?g|png)$", "", name, flags=re.I)
-              name = re.sub(
-                  r"(?:^|[_-])(thumb|thumbnail|small|medium|large|orig|original|preview)(?:$|[_-])",
-                  "_",
-                  name,
-                  flags=re.I,
-              )
-              name = re.sub(r"[_-]\d{2,4}x\d{2,4}(?=$|[_-])", "_", name)
-              name = re.sub(r"[_\-\s]+", " ", name).strip()
-
-              if len(name) < 8 or name in {"image","photo","picture","pic","img","jpeg","jpg","dsc","scan","untitled"}:
-                  return ""
-              return name
-
-          def infer_tags(text):
-              tags = []
-              for tag, rx in TAG_PATTERNS:
-                  if rx.search(text):
-                      tags.append(tag)
-              return sorted(set(tags))
-
-          def query_wayback_block(source, domain, start_year, end_year):
-              params = [
-                  ("url", domain),
-                  ("matchType", "domain"),
-                  ("output", "json"),
-                  ("fl", "timestamp,original,mimetype,statuscode,digest,length"),
-                  ("from", f"{start_year:04d}0101"),
-                  ("to", f"{end_year:04d}1231"),
-                  ("filter", "statuscode:200"),
-                  ("filter", "mimetype:image/jpeg"),
-                  ("collapse", "digest"),
-                  ("limit", "500"),
-              ]
-
-              try:
-                  rows = fetch_json("https://web.archive.org/cdx/search/cdx?" + urllib.parse.urlencode(params))
-              except Exception:
-                  return []
-
-              out = []
-              for row in rows[1:] if rows and len(rows) > 1 else []:
-                  if len(row) < 6:
-                      continue
-
-                  ts, original, mime, status, digest, length = row[:6]
-                  try:
-                      year = int(ts[:4])
-                      size = int(length or 0)
-                  except Exception:
-                      continue
-
-                  if not (1994 <= year <= 2008):
-                      continue
-                  if not JPEG.search(original):
-                      continue
-                  if BAD_ASSET.search(original):
-                      continue
-                  if mime != "image/jpeg":
-                      continue
-                  if size and size < 18000:
-                      continue
-                  if not digest:
-                      continue
-
-                  subject_text = urllib.parse.unquote(original)
-                  out.append({
-                      "year": year,
-                      "source": source,
-                      "digest": "wayback:" + digest,
-                      "visualKey": canonical_name(original),
-                      "tags": infer_tags(subject_text),
-                      "original": original,
-                      "archive": f"https://web.archive.org/web/{ts}id_/{original}",
-                  })
-              return out
-
-          def query_commons_year(year):
-              base = "https://commons.wikimedia.org/w/api.php"
-              cont = None
-              out = []
-              cap = 140
-
-              while len(out) < cap:
-                  params = {
-                      "action": "query",
-                      "generator": "categorymembers",
-                      "gcmtitle": f"Category:{year} photographs",
-                      "gcmtype": "file",
-                      "gcmlimit": "max",
-                      "prop": "imageinfo|categories",
-                      "iiprop": "url|size|mime|sha1",
-                      "cllimit": "max",
-                      "clshow": "!hidden",
-                      "format": "json",
-                      "formatversion": "2",
-                  }
-                  if cont:
-                      params["gcmcontinue"] = cont
-
-                  try:
-                      data = fetch_json(base + "?" + urllib.parse.urlencode(params))
-                  except Exception:
-                      break
-
-                  for page in data.get("query", {}).get("pages", []):
-                      ii = page.get("imageinfo") or []
-                      if not ii:
-                          continue
-
-                      info = ii[0]
-                      url = info.get("url", "")
-                      sha1 = info.get("sha1", "")
-                      width = int(info.get("width") or 0)
-                      height = int(info.get("height") or 0)
-                      size = int(info.get("size") or 0)
-                      title = page.get("title", "")
-                      cats = " ".join(c.get("title", "") for c in page.get("categories", []))
-                      subject_text = f"{title} {cats}"
-
-                      if info.get("mime") != "image/jpeg":
-                          continue
-                      if not url.startswith("https://upload.wikimedia.org/"):
-                          continue
-                      if min(width, height) < MIN_SHORT_SIDE or max(width, height) < MIN_LONG_SIDE:
-                          continue
-                      if size and size < 18000:
-                          continue
-                      if not sha1:
-                          continue
-
-                      out.append({
-                          "year": year,
-                          "source": "Wikimedia Commons",
-                          "digest": "commons:" + sha1,
-                          "visualKey": canonical_name(title),
-                          "tags": infer_tags(subject_text),
-                          "original": title,
-                          "archive": url,
-                      })
-
-                      if len(out) >= cap:
-                          break
-
-                  cont = data.get("continue", {}).get("gcmcontinue")
-                  if not cont:
-                      break
-
-              random.shuffle(out)
-              return out[:cap]
-
-          jobs = []
-          for source, domain, born in WAYBACK_SOURCES:
-              y = max(1994, born)
-              while y <= 2008:
-                  jobs.append((source, domain, y, min(y + 2, 2008)))
-                  y += 3
-
-          rows = []
-
-          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as p:
-              futures = [p.submit(query_wayback_block, *j) for j in jobs]
-              for f in concurrent.futures.as_completed(futures):
-                  try:
-                      rows.extend(f.result())
-                  except Exception:
-                      pass
-
-          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as p:
-              futures = [p.submit(query_commons_year, y) for y in range(1994, 2009)]
-              for f in concurrent.futures.as_completed(futures):
-                  try:
-                      rows.extend(f.result())
-                  except Exception:
-                      pass
-
-          random.shuffle(rows)
-          seen_d = set()
-          seen_v = set()
-          buckets = {}
-
-          for item in rows:
-              d = item["digest"]
-              v = item.get("visualKey") or ""
-
-              if d in seen_d or (v and v in seen_v):
-                  continue
-
-              seen_d.add(d)
-              if v:
-                  seen_v.add(v)
-
-              bucket = (item["source"], item["year"])
-              buckets.setdefault(bucket, [])
-              cap = 20 if item["source"] == "Wikimedia Commons" else 15
-              if len(buckets[bucket]) < cap:
-                  buckets[bucket].append(item)
-
-          catalog = [x for items in buckets.values() for x in items]
-          random.shuffle(catalog)
-          catalog = catalog[:3500]
-
-          print("catalog size:", len(catalog))
-          if len(catalog) < 25:
-              raise RuntimeError("Too few usable images; catalog not replaced.")
-
-          with open("catalog.json", "w", encoding="utf-8") as f:
-              json.dump(catalog, f, separators=(",", ":"))
-
-      - name: Commit refreshed catalog
+      - name: Commit catalog
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add catalog.json
+          git add catalog
           git diff --cached --quiet && exit 0
-          git commit -m "Refresh image catalog"
+          git commit -m "Refresh Shuffler catalog"
           git push
