@@ -1,4 +1,3 @@
-
 const $ = (s) => document.querySelector(s);
 
 const imageEl = $('#image');
@@ -69,6 +68,8 @@ const DEFAULT_PREFS = {
 const LOOKAHEAD = 3;
 const MIN_SHORT_SIDE = 200;
 const MIN_LONG_SIDE = 300;
+const PERSISTENT_SEEN_KEY = 'shufflerSeenV25';
+const PERSISTENT_SEEN_LIMIT = 3500;
 
 let prefs = loadPrefs();
 let manifest = null;
@@ -78,10 +79,12 @@ let regionQueues = new Map();
 let history = [];
 let historyIndex = -1;
 
-// Crucial v2 rule: once shown, an image is never shown again in this page session.
 const seenSession = new Set();
 const failedSession = new Set();
 const reserved = new Set();
+
+let persistentSeenList = loadPersistentSeenList();
+let persistentSeenSet = new Set(persistentSeenList);
 
 let preloadBuffer = [];
 let fillPromise = null;
@@ -120,7 +123,39 @@ function loadPrefs() {
 }
 
 function savePrefs() {
-  localStorage.setItem('shufflerPrefsV2', JSON.stringify(prefs));
+  try {
+    localStorage.setItem('shufflerPrefsV2', JSON.stringify(prefs));
+  } catch {}
+}
+
+function loadPersistentSeenList() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PERSISTENT_SEEN_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((v) => typeof v === 'string').slice(-PERSISTENT_SEEN_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function savePersistentSeen() {
+  try {
+    localStorage.setItem(PERSISTENT_SEEN_KEY, JSON.stringify(persistentSeenList));
+  } catch {}
+}
+
+function markSeenPersistent(key) {
+  if (!key || persistentSeenSet.has(key)) return;
+  persistentSeenSet.add(key);
+  persistentSeenList.push(key);
+  if (persistentSeenList.length > PERSISTENT_SEEN_LIMIT) {
+    const overflow = persistentSeenList.length - PERSISTENT_SEEN_LIMIT;
+    const removed = persistentSeenList.splice(0, overflow);
+    for (const oldKey of removed) {
+      if (!persistentSeenList.includes(oldKey)) persistentSeenSet.delete(oldKey);
+    }
+  }
+  savePersistentSeen();
 }
 
 function applyTheme() {
@@ -181,7 +216,6 @@ function setMessage(text) {
 }
 
 function itemKey(item) {
-  // pHash is best; visualKey/digest are fallbacks.
   return String(item.phash || item.visualKey || item.digest || item.archive);
 }
 
@@ -262,6 +296,7 @@ function rebuildQueues() {
       const key = itemKey(item);
       return itemAllowed(item) &&
         !seenSession.has(key) &&
+        !persistentSeenSet.has(key) &&
         !failedSession.has(item.archive);
     });
     regionQueues.set(region, shuffle(eligible));
@@ -289,6 +324,7 @@ function popBalancedCandidate() {
     const key = itemKey(item);
 
     if (seenSession.has(key)) continue;
+    if (persistentSeenSet.has(key)) continue;
     if (reserved.has(key)) continue;
     if (failedSession.has(item.archive)) continue;
 
@@ -334,7 +370,6 @@ function preloadImage(item, token, timeoutMs = 12000) {
         return finish(false, 'too small');
       }
 
-      // decode() keeps the visible transition smooth when supported.
       try {
         if (typeof test.decode === 'function') await test.decode();
       } catch {}
@@ -381,6 +416,7 @@ async function takePreparedEntry() {
   if (entry) {
     reserved.delete(entry.key);
     seenSession.add(entry.key);
+    markSeenPersistent(entry.key);
   }
   fillBuffer();
   return entry;
@@ -399,7 +435,6 @@ function render(entry) {
 async function advance() {
   clearAutoplayTimer();
 
-  // Unified history: autoplay and manual navigation use the exact same stream.
   if (historyIndex < history.length - 1) {
     historyIndex += 1;
     render(history[historyIndex]);
@@ -412,7 +447,7 @@ async function advance() {
   try {
     const entry = await takePreparedEntry();
     if (!entry) {
-      setMessage('No unseen images left for the current controls in this session.');
+      setMessage('No unseen images left for the current controls right now.');
       pauseAutoplay(true);
       return;
     }
@@ -490,7 +525,6 @@ function toggleAutoplay() {
 }
 
 function pauseAndRevealCurrentImage() {
-  // Tapping the image during autoplay freezes the current image exactly where it is.
   if (!autoplayRunning) return;
   pauseAutoplay(true);
 }
@@ -500,7 +534,6 @@ async function applyControls() {
   savePrefs();
   overlay.classList.remove('open');
 
-  // Keep already-viewed history, but discard forward history created under old controls.
   if (historyIndex < history.length - 1) {
     history = history.slice(0, historyIndex + 1);
   }
@@ -513,10 +546,42 @@ async function applyControls() {
   else render(history[historyIndex]);
 }
 
-backBtn.addEventListener('click', goBack);
-nextBtn.addEventListener('click', advance);
+function shouldIgnoreKey(event) {
+  if (event.defaultPrevented) return true;
+  if (event.altKey || event.ctrlKey || event.metaKey) return true;
+  if (overlay.classList.contains('open')) return true;
+  const t = event.target;
+  const tag = (t && t.tagName ? t.tagName : '').toUpperCase();
+  return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (t && t.isContentEditable);
+}
+
+async function handleKeydown(event) {
+  if (shouldIgnoreKey(event)) return;
+
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault();
+    pauseAutoplay(true);
+    goBack();
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault();
+    pauseAutoplay(true);
+    await advance();
+  }
+}
+
+backBtn.addEventListener('click', () => {
+  pauseAutoplay(true);
+  goBack();
+});
+
+nextBtn.addEventListener('click', async () => {
+  pauseAutoplay(true);
+  await advance();
+});
+
 playBtn.addEventListener('click', toggleAutoplay);
 frameEl.addEventListener('click', pauseAndRevealCurrentImage);
+window.addEventListener('keydown', handleKeydown);
 
 openControlsBtn.addEventListener('click', () => {
   pauseAutoplay(true);
