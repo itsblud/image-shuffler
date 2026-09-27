@@ -1,0 +1,32 @@
+name: Audit image sources
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Run source audit
+        run: python audit_sources.py
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v7
+        with:
+          name: shuffler-source-audit
+          path: source-audit-report/
+          if-no-files-found: error
+          retention-days: 7
