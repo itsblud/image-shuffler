@@ -1,621 +1,89 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; img-src https://web.archive.org https://upload.wikimedia.org; style-src 'sha256-9TKq6Zf3mTLxiCTkbrO4i2rhIxvFkZ5pCh2tONoRJKo='; script-src 'sha256-7o8fAg+d9dgAR6Rkwki23WMm02X5wpJAObOM5I7pQsE='; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
-<meta name="referrer" content="no-referrer">
-<title>Image Shuffler</title>
-<style>
-*{box-sizing:border-box}
-:root{
-  --bg:#1e1e1e;
-  --fg:#f3f3f3;
-  --panel:#2c2c2c;
-  --panel-2:#3a3a3a;
-  --stage:#111;
-  --border:#d8d8d8;
-  --shadow:#000;
-  --muted:#b9b9b9;
-  --scrim:rgba(0,0,0,.18);
-}
-html[data-theme="light"]{
-  --bg:#bdbdbd;
-  --fg:#000;
-  --panel:#fff;
-  --panel-2:#efefef;
-  --stage:#fff;
-  --border:#000;
-  --shadow:#777;
-  --muted:#555;
-  --scrim:rgba(0,0,0,.08);
-}
-html,body{
-  margin:0;width:100%;height:100%;overflow:hidden;
-  background:var(--bg);color:var(--fg);
-  font-family:Geneva,Chicago,"Helvetica Neue",Arial,sans-serif;
-}
-button,input,label{font:inherit}
-#app{
-  height:100svh;
-  display:flex;
-  flex-direction:column;
-  padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right))
-          max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));
-  gap:8px;
-}
-#topbar{
-  flex:0 0 auto;
-  display:flex;
-  justify-content:flex-start;
-}
-#stage{
-  position:relative;
-  flex:1 1 auto;
-  min-height:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  overflow:hidden;
-  background:var(--stage);
-  border:2px solid var(--border);
-  box-shadow:inset 1px 1px 0 rgba(255,255,255,.25), inset -1px -1px 0 var(--shadow);
-  padding:8px;
-}
-#stage::before{
-  content:"";
-  position:absolute;
-  left:0;right:0;top:0;
-  height:12px;
-  border-bottom:1px solid var(--border);
-  background:repeating-linear-gradient(
-    to bottom,
-    rgba(255,255,255,.75) 0px,rgba(255,255,255,.75) 1px,
-    rgba(0,0,0,.65) 1px,rgba(0,0,0,.65) 2px
-  );
-  pointer-events:none;
-}
-#image{
-  display:none;
-  width:auto;height:auto;
-  max-width:100%;
-  max-height:calc(100% - 12px);
-  object-fit:contain;
-}
-#message{
-  color:var(--fg);
-  background:var(--stage);
-  font-size:14px;
-  text-align:center;
-  padding:24px;
-  line-height:1.4;
-}
-#nav{
-  flex:0 0 auto;
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:10px;
-}
-button{
-  appearance:none;
-  min-height:44px;
-  border:2px solid var(--border);
-  border-radius:0;
-  background:var(--panel);
-  color:var(--fg);
-  font-size:15px;
-  font-weight:700;
-  box-shadow:inset 1px 1px 0 rgba(255,255,255,.35), inset -2px -2px 0 var(--shadow);
-}
-button:active{
-  transform:translate(1px,1px);
-  box-shadow:none;
-}
-button:disabled{
-  color:var(--muted);
-  border-color:var(--muted);
-  box-shadow:none;
-}
-.smallbtn{min-height:38px;padding:0 14px}
-#overlay{
-  position:fixed;
-  inset:0;
-  display:none;
-  z-index:10;
-  background:var(--scrim);
-}
-#overlay.open{display:block}
-#panel{
-  position:absolute;
-  left:50%;
-  top:max(18px,env(safe-area-inset-top));
-  transform:translateX(-50%);
-  width:min(92vw,430px);
-  max-height:calc(100svh - 36px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  overflow:auto;
-  background:var(--panel);
-  color:var(--fg);
-  border:2px solid var(--border);
-  padding:18px;
-  box-shadow:4px 4px 0 var(--shadow);
-}
-#panel::before{
-  content:"";
-  display:block;
-  height:12px;
-  margin:-18px -18px 14px;
-  border-bottom:1px solid var(--border);
-  background:repeating-linear-gradient(
-    to bottom,
-    rgba(255,255,255,.75) 0px,rgba(255,255,255,.75) 1px,
-    rgba(0,0,0,.65) 1px,rgba(0,0,0,.65) 2px
-  );
-}
-.section{margin:0 0 18px}
-.section:last-of-type{margin-bottom:10px}
-.section h3{
-  margin:0 0 10px;
-  font-size:14px;
-  text-transform:uppercase;
-  letter-spacing:.03em;
-}
-.row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  margin:8px 0;
-}
-.row.stack{display:block}
-.rangevalue{
-  text-align:center;
-  font-size:18px;
-  font-weight:700;
-  margin-bottom:8px;
-}
-input[type=range]{width:100%;margin:12px 0;accent-color:#888}
-.checklist{display:grid;gap:8px}
-.checkitem{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:6px 0;
-}
-.checkitem input{transform:scale(1.15)}
-.muted{font-size:12px;color:var(--muted);line-height:1.35}
-#panelbuttons{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:10px;
-  margin-top:10px;
-}
-@media (orientation:landscape){
-  #app{gap:6px;padding-top:max(6px,env(safe-area-inset-top));padding-bottom:max(6px,env(safe-area-inset-bottom))}
-  #stage{padding:6px}
-  #image{max-height:calc(100svh - 116px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
-  button{min-height:40px}
-}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; img-src https://web.archive.org https://upload.wikimedia.org; style-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Shuffler</title>
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<div id="app">
-  <div id="topbar">
-    <button id="openControls" class="smallbtn">Controls</button>
-  </div>
+  <main id="app">
+    <section id="frame" aria-label="Image viewer">
+      <img id="image" alt="" referrerpolicy="no-referrer">
+      <div id="message">Loading…</div>
+    </section>
 
-  <div id="stage">
-    <img id="image" alt="" referrerpolicy="no-referrer">
-    <div id="message">Loading…</div>
-  </div>
+    <header id="topbar" class="chrome">
+      <button id="openControls" class="smallbtn" type="button">Controls</button>
+      <div id="brand">Shuffler</div>
+      <div id="counter" aria-live="polite"></div>
+    </header>
 
-  <div id="nav">
-    <button id="back" disabled>Back</button>
-    <button id="next">Next</button>
-  </div>
-</div>
+    <nav id="nav" class="chrome" aria-label="Image navigation">
+      <button id="back" type="button" disabled>Back</button>
+      <button id="play" type="button">Play</button>
+      <button id="next" type="button">Next</button>
+    </nav>
+  </main>
 
-<div id="overlay">
-  <div id="panel" role="dialog" aria-modal="true" aria-label="Controls">
-    <div class="section">
-      <h3>Appearance</h3>
-      <div class="row">
-        <div>Theme</div>
-        <button id="themeToggle" class="smallbtn" type="button">Switch to Light Mode</button>
+  <div id="overlay">
+    <section id="panel" role="dialog" aria-modal="true" aria-label="Controls">
+      <div class="section">
+        <h3>Appearance</h3>
+        <div class="row">
+          <span>Theme</span>
+          <button id="themeToggle" class="smallbtn" type="button">Switch to Dark Mode</button>
+        </div>
       </div>
-    </div>
 
-    <div class="section">
-      <h3>Year Range</h3>
-      <div id="years" class="rangevalue">1994 – 2008</div>
-      <input id="from" type="range" min="1994" max="2008" value="1994" step="1" aria-label="Earliest year">
-      <input id="to" type="range" min="1994" max="2008" value="2008" step="1" aria-label="Latest year">
-    </div>
-
-    <div class="section">
-      <h3>Filters</h3>
-      <div class="checklist">
-        <label class="checkitem"><input id="includeLandscape" type="checkbox">Include landscapes / nature</label>
-        <label class="checkitem"><input id="includeFlowers" type="checkbox">Include flowers / plants</label>
-        <label class="checkitem"><input id="includeArchitecture" type="checkbox">Include architecture / buildings</label>
-        <label class="checkitem"><input id="includeAnimals" type="checkbox" checked>Include animals / pets</label>
-        <label class="checkitem"><input id="includeVehicles" type="checkbox" checked>Include vehicles / transportation</label>
+      <div class="section">
+        <h3>Auto-play</h3>
+        <div class="row">
+          <span>Interval</span>
+          <select id="autoplaySeconds" aria-label="Auto-play interval">
+            <option value="5">5 sec</option>
+            <option value="8" selected>8 sec</option>
+            <option value="10">10 sec</option>
+            <option value="15">15 sec</option>
+            <option value="20">20 sec</option>
+            <option value="30">30 sec</option>
+          </select>
+        </div>
+        <div class="muted">Press Play in the viewer to start. The interface fades away. Tap the image to pause on that exact image and bring the controls back.</div>
       </div>
-      <div class="muted">Landscape, flower, and architecture images are off by default. The other category toggles stay on by default.</div>
-    </div>
 
-    <div id="panelbuttons">
-      <button id="closeControls" type="button">Close</button>
-      <button id="applyControls" type="button">Apply</button>
-    </div>
+      <div class="section">
+        <h3>Year Range</h3>
+        <div id="years" class="rangevalue">1994 – 2008</div>
+        <input id="yearFrom" type="range" min="1994" max="2008" value="1994" step="1" aria-label="Earliest year">
+        <input id="yearTo" type="range" min="1994" max="2008" value="2008" step="1" aria-label="Latest year">
+      </div>
+
+      <div class="section">
+        <h3>Region Mix</h3>
+        <div class="checkgrid">
+          <label class="checkitem"><input id="region-north-america" type="checkbox" checked>North America</label><label class="checkitem"><input id="region-latin-america-caribbean" type="checkbox" checked>Latin America / Caribbean</label><label class="checkitem"><input id="region-africa" type="checkbox" checked>Africa</label><label class="checkitem"><input id="region-south-asia" type="checkbox" checked>South Asia</label><label class="checkitem"><input id="region-east-asia" type="checkbox" checked>East Asia</label><label class="checkitem"><input id="region-mena" type="checkbox" checked>Middle East / North Africa</label><label class="checkitem"><input id="region-europe" type="checkbox" checked>Europe</label><label class="checkitem"><input id="region-global" type="checkbox" checked>Global / Unknown</label>
+        </div>
+        <div class="muted">Shuffler chooses a region first, then an image, so a giant Western archive cannot drown out smaller regional pools.</div>
+      </div>
+
+      <div class="section">
+        <h3>Image Types</h3>
+        <div class="checkgrid">
+          <label class="checkitem"><input id="filter-people" type="checkbox" checked>People / everyday life</label><label class="checkitem"><input id="filter-signs" type="checkbox" checked>Signs / graphics / advertising</label><label class="checkitem"><input id="filter-fashion" type="checkbox" checked>Fashion / clothing</label><label class="checkitem"><input id="filter-vehicles" type="checkbox" checked>Vehicles / transportation</label><label class="checkitem"><input id="filter-interiors" type="checkbox" checked>Interiors / domestic life</label><label class="checkitem"><input id="filter-objects" type="checkbox" checked>Objects / products / packaging</label><label class="checkitem"><input id="filter-religion" type="checkbox" checked>Religion / ritual</label><label class="checkitem"><input id="filter-animals" type="checkbox" checked>Animals / pets</label><label class="checkitem"><input id="filter-architecture" type="checkbox" >Architecture / buildings</label><label class="checkitem"><input id="filter-landscape" type="checkbox" >Nature / landscape</label><label class="checkitem"><input id="filter-flowers" type="checkbox" >Plants / flowers</label>
+        </div>
+        <div class="muted">Architecture, landscape and flowers are off by default. Old-web metadata is imperfect, so filtering is intentionally best-effort.</div>
+      </div>
+
+      <div id="panelbuttons">
+        <button id="closeControls" type="button">Close</button>
+        <button id="applyControls" type="button">Apply</button>
+      </div>
+    </section>
   </div>
-</div>
 
-<script>
-const img=document.querySelector('#image');
-const msg=document.querySelector('#message');
-const back=document.querySelector('#back');
-const next=document.querySelector('#next');
-const overlay=document.querySelector('#overlay');
-const openControls=document.querySelector('#openControls');
-const closeControls=document.querySelector('#closeControls');
-const applyControls=document.querySelector('#applyControls');
-const from=document.querySelector('#from');
-const to=document.querySelector('#to');
-const years=document.querySelector('#years');
-const themeToggle=document.querySelector('#themeToggle');
-const includeLandscape=document.querySelector('#includeLandscape');
-const includeFlowers=document.querySelector('#includeFlowers');
-const includeArchitecture=document.querySelector('#includeArchitecture');
-const includeAnimals=document.querySelector('#includeAnimals');
-const includeVehicles=document.querySelector('#includeVehicles');
-
-const MIN_SHORT_SIDE=200;
-const MIN_LONG_SIDE=300;
-const MAX_ATTEMPTS_PER_NEXT=18;
-
-const DEFAULT_PREFS={
-  yearFrom:1994,
-  yearTo:2008,
-  theme:'dark',
-  filters:{
-    landscape:false,
-    flowers:false,
-    architecture:false,
-    animals:true,
-    vehicles:true
-  }
-};
-
-let prefs=loadPrefs();
-let catalog=[];
-let filtered=[];
-let queue=[];
-let history=[];
-let index=-1;
-let requestToken=0;
-let failed=new Set();
-let seenKeys=new Set();
-
-function loadPrefs(){
-  try{
-    const raw=JSON.parse(localStorage.getItem('oldImagePrefs')||'{}');
-    return {
-      yearFrom:Number.isFinite(+raw.yearFrom)?clampYear(+raw.yearFrom):DEFAULT_PREFS.yearFrom,
-      yearTo:Number.isFinite(+raw.yearTo)?clampYear(+raw.yearTo):DEFAULT_PREFS.yearTo,
-      theme:raw.theme==='light'?'light':'dark',
-      filters:{
-        landscape: raw.filters && typeof raw.filters.landscape==='boolean' ? raw.filters.landscape : DEFAULT_PREFS.filters.landscape,
-        flowers: raw.filters && typeof raw.filters.flowers==='boolean' ? raw.filters.flowers : DEFAULT_PREFS.filters.flowers,
-        architecture: raw.filters && typeof raw.filters.architecture==='boolean' ? raw.filters.architecture : DEFAULT_PREFS.filters.architecture,
-        animals: raw.filters && typeof raw.filters.animals==='boolean' ? raw.filters.animals : DEFAULT_PREFS.filters.animals,
-        vehicles: raw.filters && typeof raw.filters.vehicles==='boolean' ? raw.filters.vehicles : DEFAULT_PREFS.filters.vehicles,
-      }
-    };
-  }catch{
-    return JSON.parse(JSON.stringify(DEFAULT_PREFS));
-  }
-}
-
-function savePrefs(){
-  localStorage.setItem('oldImagePrefs', JSON.stringify(prefs));
-}
-
-function clampYear(y){
-  return Math.max(1994, Math.min(2008, y));
-}
-
-function applyTheme(){
-  document.documentElement.setAttribute('data-theme', prefs.theme);
-  themeToggle.textContent = prefs.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode';
-}
-
-function syncControlsFromPrefs(){
-  from.value=clampYear(prefs.yearFrom);
-  to.value=clampYear(prefs.yearTo);
-  includeLandscape.checked=prefs.filters.landscape;
-  includeFlowers.checked=prefs.filters.flowers;
-  includeArchitecture.checked=prefs.filters.architecture;
-  includeAnimals.checked=prefs.filters.animals;
-  includeVehicles.checked=prefs.filters.vehicles;
-  updateYearLabel();
-}
-
-function readControlsIntoPrefs(){
-  let a=clampYear(+from.value), b=clampYear(+to.value);
-  if(a>b)[a,b]=[b,a];
-  prefs.yearFrom=a;
-  prefs.yearTo=b;
-  prefs.filters.landscape=!!includeLandscape.checked;
-  prefs.filters.flowers=!!includeFlowers.checked;
-  prefs.filters.architecture=!!includeArchitecture.checked;
-  prefs.filters.animals=!!includeAnimals.checked;
-  prefs.filters.vehicles=!!includeVehicles.checked;
-}
-
-function updateYearLabel(){
-  let a=clampYear(+from.value), b=clampYear(+to.value);
-  if(a>b)[a,b]=[b,a];
-  years.textContent=`${a} – ${b}`;
-}
-
-function setMessage(text){
-  img.style.display='none';
-  msg.style.display='block';
-  msg.textContent=text;
-}
-
-function shuffle(items){
-  const a=items.slice();
-  for(let i=a.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [a[i],a[j]]=[a[j],a[i]];
-  }
-  return a;
-}
-
-function canonicalName(item){
-  if(item.visualKey) return String(item.visualKey);
-  if(item.digest) return String(item.digest);
-  try{
-    const raw=String(item.original||item.archive||'');
-    const u=raw.startsWith('http')?new URL(raw):null;
-    let name=(u?u.pathname:raw).split('/').pop()||raw;
-    name=decodeURIComponent(name).toLowerCase()
-      .replace(/\.(jpe?g|png)$/,'')
-      .replace(/(?:^|[_-])(thumb|thumbnail|small|medium|large|orig|original|preview)(?:$|[_-])/g,'')
-      .replace(/[_-]\d{2,4}x\d{2,4}(?=$|[_-])/g,'')
-      .replace(/\s+/g,' ')
-      .trim();
-    return name.length>=8?name:String(item.archive);
-  }catch{
-    return String(item.archive);
-  }
-}
-
-function tagSet(item){
-  return new Set(Array.isArray(item.tags)?item.tags:[]);
-}
-
-function allowedByFilters(item){
-  const tags=tagSet(item);
-  if(!prefs.filters.landscape && tags.has('landscape')) return false;
-  if(!prefs.filters.flowers && tags.has('flowers')) return false;
-  if(!prefs.filters.architecture && tags.has('architecture')) return false;
-  if(!prefs.filters.animals && tags.has('animals')) return false;
-  if(!prefs.filters.vehicles && tags.has('vehicles')) return false;
-  return true;
-}
-
-function filterCatalog(){
-  const minYear=Math.min(prefs.yearFrom,prefs.yearTo);
-  const maxYear=Math.max(prefs.yearFrom,prefs.yearTo);
-
-  filtered=catalog.filter(x=>{
-    const y=Number(x.year);
-    const trusted = typeof x.archive==='string' && (
-      x.archive.startsWith('https://web.archive.org/') ||
-      x.archive.startsWith('https://upload.wikimedia.org/')
-    );
-    return trusted && y>=minYear && y<=maxYear && allowedByFilters(x);
-  });
-
-  queue=shuffle(filtered);
-  failed.clear();
-  seenKeys.clear();
-}
-
-function refillQueue(){
-  seenKeys.clear();
-  queue=shuffle(filtered.filter(x=>!failed.has(x.archive)));
-}
-
-function preload(item, timeoutMs=12000){
-  return new Promise((resolve,reject)=>{
-    const test=new Image();
-    let settled=false;
-
-    const finish=(ok,reason)=>{
-      if(settled) return;
-      settled=true;
-      clearTimeout(timer);
-      test.onload=null;
-      test.onerror=null;
-      if(ok){
-        resolve({item,url:test.src,key:canonicalName(item)});
-      }else{
-        reject(new Error(reason||'image failed'));
-      }
-    };
-
-    const timer=setTimeout(()=>finish(false,'timeout'), timeoutMs);
-
-    test.onload=()=>{
-      const shortSide=Math.min(test.naturalWidth, test.naturalHeight);
-      const longSide=Math.max(test.naturalWidth, test.naturalHeight);
-      if(shortSide<MIN_SHORT_SIDE || longSide<MIN_LONG_SIDE){
-        finish(false,'too small');
-      }else{
-        finish(true);
-      }
-    };
-
-    test.onerror=()=>finish(false,'image failed');
-    test.referrerPolicy='no-referrer';
-    test.src=item.archive;
-  });
-}
-
-async function findNextWorkingImage(){
-  const token=++requestToken;
-
-  for(let attempt=0;attempt<MAX_ATTEMPTS_PER_NEXT;attempt++){
-    if(token!==requestToken) throw new Error('cancelled');
-
-    if(!queue.length) refillQueue();
-    if(!queue.length) throw new Error('empty');
-
-    const item=queue.pop();
-    const key=canonicalName(item);
-    if(seenKeys.has(key)) continue;
-
-    try{
-      const loaded=await preload(item);
-      if(token!==requestToken) throw new Error('cancelled');
-      seenKeys.add(loaded.key);
-      return loaded;
-    }catch(e){
-      if(e.message==='cancelled') throw e;
-      failed.add(item.archive);
-    }
-  }
-
-  throw new Error('unavailable');
-}
-
-function render(entry){
-  if(!entry) return;
-  msg.style.display='none';
-  img.style.display='block';
-  img.src=entry.url || entry.item.archive;
-  back.disabled=index<=0;
-}
-
-async function nextImage(){
-  if(index<history.length-1){
-    index++;
-    render(history[index]);
-    return;
-  }
-
-  next.disabled=true;
-  setMessage('Finding image…');
-
-  try{
-    const entry=await findNextWorkingImage();
-    history=history.slice(0,index+1);
-    history.push(entry);
-    index=history.length-1;
-    render(entry);
-  }catch(e){
-    if(e.message!=='cancelled'){
-      setMessage(
-        e.message==='empty'
-          ? 'No usable images for the current controls.'
-          : 'No working image found. Tap Next to try again.'
-      );
-    }
-  }finally{
-    next.disabled=false;
-    back.disabled=index<=0;
-  }
-}
-
-function reapplyCatalog(){
-  requestToken++;
-  history=[];
-  index=-1;
-  filterCatalog();
-  back.disabled=true;
-
-  if(!filtered.length){
-    setMessage('No usable images for the current controls.');
-    return;
-  }
-
-  nextImage();
-}
-
-back.onclick=()=>{
-  requestToken++;
-  if(index>0){
-    index--;
-    render(history[index]);
-  }
-};
-
-next.onclick=nextImage;
-
-openControls.onclick=()=>{
-  syncControlsFromPrefs();
-  overlay.classList.add('open');
-};
-
-closeControls.onclick=()=>{
-  overlay.classList.remove('open');
-};
-
-applyControls.onclick=()=>{
-  readControlsIntoPrefs();
-  savePrefs();
-  overlay.classList.remove('open');
-  reapplyCatalog();
-};
-
-themeToggle.onclick=()=>{
-  prefs.theme = prefs.theme === 'dark' ? 'light' : 'dark';
-  applyTheme();
-  savePrefs();
-};
-
-overlay.onclick=(e)=>{
-  if(e.target===overlay){
-    overlay.classList.remove('open');
-  }
-};
-
-from.oninput=updateYearLabel;
-to.oninput=updateYearLabel;
-
-async function boot(){
-  applyTheme();
-  syncControlsFromPrefs();
-
-  try{
-    const r=await fetch('./catalog.json?v='+Date.now(),{
-      cache:'no-store',
-      credentials:'same-origin',
-      redirect:'error'
-    });
-    if(!r.ok) throw new Error('catalog http');
-
-    const data=await r.json();
-    if(!Array.isArray(data) || !data.length) throw new Error('catalog empty');
-
-    catalog=data;
-    filterCatalog();
-
-    if(!filtered.length){
-      setMessage('No usable images for the current controls.');
-      return;
-    }
-
-    nextImage();
-  }catch{
-    setMessage('Image catalog is not ready yet.');
-  }
-}
-
-boot();
-</script>
+  <script src="./app.js"></script>
 </body>
 </html>
