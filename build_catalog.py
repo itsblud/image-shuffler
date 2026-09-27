@@ -18,6 +18,7 @@ import json
 import random
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
@@ -166,16 +167,37 @@ def fetch_json(url: str, retries: int = 2):
             time.sleep(delay)
             delay *= 2
 
-def fetch_bytes(url: str, max_bytes: int = 12_000_000):
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": USER_AGENT, "Accept": "image/*,*/*"},
-    )
-    with urllib.request.urlopen(req, timeout=12) as response:
-        data = response.read(max_bytes + 1)
-        if len(data) > max_bytes:
-            raise ValueError("image too large")
-        return data
+def fetch_bytes(url: str, max_bytes: int = 12_000_000, retries: int = 3):
+    delay = 1.5
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": USER_AGENT, "Accept": "image/*,*/*"},
+            )
+            with urllib.request.urlopen(req, timeout=12) as response:
+                data = response.read(max_bytes + 1)
+                if len(data) > max_bytes:
+                    raise ValueError("image too large")
+                return data
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 or 500 <= exc.code < 600:
+                if attempt == retries - 1:
+                    raise
+                retry_after = exc.headers.get("Retry-After")
+                try:
+                    wait = min(8.0, max(delay, float(retry_after)))
+                except (TypeError, ValueError):
+                    wait = delay
+                time.sleep(wait)
+                delay *= 2
+                continue
+            raise
+        except Exception:
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay)
+            delay *= 2
 
 def infer_tags(text: str):
     return sorted({tag for tag, rx in TAG_PATTERNS if rx.search(text)})
@@ -270,6 +292,7 @@ def query_commons(country, region, year):
         "gcmlimit": "max",
         "prop": "imageinfo|categories",
         "iiprop": "url|size|mime|sha1",
+        "iiurlwidth": "512",
         "cllimit": "max",
         "clshow": "!hidden",
         "format": "json",
@@ -318,6 +341,7 @@ def query_commons(country, region, year):
             "tags": infer_tags(f"{title} {categories}"),
             "original": title,
             "archive": image_url,
+            "fingerprintUrl": info.get("thumburl") or image_url,
             "width": width,
             "height": height,
         })
@@ -346,7 +370,7 @@ def dhash_and_dimensions(item, cache):
         return result
 
     try:
-        data = fetch_bytes(item["archive"])
+        data = fetch_bytes(item.get("fingerprintUrl") or item["archive"])
         with Image.open(io.BytesIO(data)) as im:
             im = im.convert("L")
             width, height = im.size
@@ -445,11 +469,39 @@ def main():
 
     print("preliminary candidates:", len(preliminary))
 
-    # Expensive work is cached by archive digest. On later builds, unchanged
-    # images skip the download/fingerprint stage.
+    # Expensive work is incremental. Cached images are effectively free.
+    # For brand-new images, process a bounded, source-balanced batch so one
+    # dead host cannot consume the whole build.
+    cached_items = []
+    uncached_by_source = defaultdict(list)
+
+    for item in preliminary:
+        if item["digest"] in cache and cache[item["digest"]].get("phash"):
+            cached_items.append(item)
+        else:
+            uncached_by_source[item["source"]].append(item)
+
+    new_batch = []
+    NEW_PER_SOURCE = 50
+    for source, items in uncached_by_source.items():
+        random.shuffle(items)
+        new_batch.extend(items[:NEW_PER_SOURCE])
+
+    random.shuffle(new_batch)
+    new_batch = new_batch[:1500]
+
+    print("cached fingerprint candidates:", len(cached_items))
+    print("new fingerprint attempts:", len(new_batch))
+
     fingerprinted = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-        futures = [pool.submit(dhash_and_dimensions, item, cache) for item in preliminary]
+
+    for item in cached_items:
+        result = dhash_and_dimensions(item, cache)
+        if result:
+            fingerprinted.append(result)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(dhash_and_dimensions, item, cache) for item in new_batch]
         for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
@@ -477,7 +529,9 @@ def main():
         region = item.get("region", "global")
         if region not in shards:
             region = "global"
-        shards[region].append(item)
+        published = dict(item)
+        published.pop("fingerprintUrl", None)
+        shards[region].append(published)
 
     for region in REGIONS:
         random.shuffle(shards[region])
@@ -512,7 +566,7 @@ def main():
     }
 
     if manifest["total"] < 80:
-        raise RuntimeError("Too few usable images; catalog was not replaced.")
+        raise RuntimeError(f"Too few usable images after fingerprinting: {manifest['total']} (need at least 80). Catalog was not replaced.")
 
     MANIFEST_FILE.write_text(
         json.dumps(manifest, separators=(",", ":")),
