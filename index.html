@@ -5,26 +5,41 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; img-src https://web.archive.org https://upload.wikimedia.org; style-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>Shuffler</title>
-  <link rel="stylesheet" href="./styles.css?v=2.3">
+  <title>Image Viewer</title>
+  <link rel="stylesheet" href="./styles.css?v=2.4">
 </head>
 <body>
   <main id="app">
-    <section id="frame" aria-label="Image viewer">
-      <img id="image" alt="" referrerpolicy="no-referrer">
-      <div id="message">Loading…</div>
-    </section>
+    <header id="statusbar" aria-label="Status and settings">
+      <div id="signal" class="pixel-icon signal" aria-label="Signal">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
 
-    <header id="topbar" class="chrome">
-      <button id="openControls" class="smallbtn" type="button">Controls</button>
-      <div id="brand">Shuffler</div>
-      <div id="counter" aria-live="polite"></div>
+      <button id="openControls" class="status-settings" type="button">Settings</button>
+
+      <div id="battery" class="pixel-icon battery" aria-label="Battery">
+        <span class="battery-fill"></span>
+      </div>
     </header>
 
-    <nav id="nav" class="chrome" aria-label="Image navigation">
-      <button id="back" type="button" disabled>Back</button>
-      <button id="play" type="button">Play</button>
-      <button id="next" type="button">Next</button>
+    <section id="frame" aria-label="Image viewer">
+      <img id="image" alt="" referrerpolicy="no-referrer">
+
+      <div id="loader" aria-label="Loading image" aria-live="polite">
+        <span>.</span><span>.</span><span>.</span>
+      </div>
+
+      <div id="message" aria-live="polite"></div>
+    </section>
+
+    <nav id="nav" aria-label="Image navigation">
+      <button id="back" class="softkey" type="button" disabled>Prev</button>
+
+      <button id="play" class="play-softkey" type="button" aria-label="Play auto-play">
+        <span class="play-glyph" aria-hidden="true"></span>
+      </button>
+
+      <button id="next" class="softkey" type="button">Next</button>
     </nav>
   </main>
 
@@ -66,7 +81,7 @@
         <div class="checkgrid">
           <label class="checkitem"><input id="region-north-america" type="checkbox" checked>North America</label><label class="checkitem"><input id="region-latin-america-caribbean" type="checkbox" checked>Latin America / Caribbean</label><label class="checkitem"><input id="region-africa" type="checkbox" checked>Africa</label><label class="checkitem"><input id="region-south-asia" type="checkbox" checked>South Asia</label><label class="checkitem"><input id="region-east-asia" type="checkbox" checked>East Asia</label><label class="checkitem"><input id="region-mena" type="checkbox" checked>Middle East / North Africa</label><label class="checkitem"><input id="region-europe" type="checkbox" checked>Europe</label><label class="checkitem"><input id="region-global" type="checkbox" checked>Global / Unknown</label>
         </div>
-        <div class="muted">Shuffler chooses a region first, then an image, so a giant Western archive cannot drown out smaller regional pools.</div>
+        <div class="muted">A region is chosen first, then an image, so a giant archive cannot drown out smaller regional pools.</div>
       </div>
 
       <div class="section">
@@ -84,6 +99,6 @@
     </section>
   </div>
 
-  <script src="./app.js?v=2.3"></script>
+  <script src="./app.js?v=2.4"></script>
 </body>
 </html>
