@@ -1,40 +1,23 @@
 #!/usr/bin/env python3
-"""
-Shuffler v2 catalog builder.
-
-Design goals:
-- sources are modular
-- expensive visual fingerprints are cached by archive digest
-- exact and near-duplicate images are removed at build time
-- output is sharded by region
-- the browser never needs to process the whole image world at once
-"""
-
 from __future__ import annotations
 
 import concurrent.futures
-import io
 import json
 import random
 import re
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
-from PIL import Image
-
 ROOT = Path(__file__).resolve().parent
 CATALOG_DIR = ROOT / "catalog"
 REGION_DIR = CATALOG_DIR / "regions"
-CACHE_FILE = CATALOG_DIR / "fingerprint-cache.json"
 MANIFEST_FILE = CATALOG_DIR / "manifest.json"
 
-MIN_SHORT_SIDE = 200
-MIN_LONG_SIDE = 300
-USER_AGENT = "Shuffler/2.0 (private archival image browser)"
+USER_AGENT = "Shuffler/2.2 (private archival image browser)"
+MIN_ARCHIVE_BYTES = 18_000
 
 REGIONS = [
     "north-america",
@@ -47,42 +30,26 @@ REGIONS = [
     "global",
 ]
 
-# These assignments are intentionally pragmatic, not museum-grade metadata.
-# Global image-hosting sites stay "global" instead of pretending we know where
-# every user/photo came from.
 WAYBACK_SOURCES = [
-    # Black / North American web culture
     ("BlackPlanet", "blackplanet.com", 1999, "north-america"),
     ("BlackVoices", "blackvoices.com", 1995, "north-america"),
     ("Okayplayer", "okayplayer.com", 1999, "north-america"),
     ("AllHipHop", "allhiphop.com", 1998, "north-america"),
-
-    # Africa
     ("GhanaWeb", "ghanaweb.com", 1999, "africa"),
     ("Nairaland", "nairaland.com", 2005, "africa"),
-
-    # South Asia
     ("Rediff", "rediff.com", 1996, "south-asia"),
     ("Sify", "sify.com", 1998, "south-asia"),
     ("Sulekha", "sulekha.com", 1998, "south-asia"),
     ("Indiatimes", "indiatimes.com", 1996, "south-asia"),
-
-    # East Asia
     ("Cyworld", "cyworld.com", 1999, "east-asia"),
     ("Mixi", "mixi.jp", 2004, "east-asia"),
     ("Xiaonei", "xiaonei.com", 2005, "east-asia"),
     ("51.com", "51.com", 2005, "east-asia"),
     ("QQ", "qq.com", 1999, "east-asia"),
-
-    # Latin America / Caribbean
     ("Fotolog", "fotolog.com", 2002, "latin-america-caribbean"),
     ("MiGente", "migente.com", 2000, "latin-america-caribbean"),
-
-    # MENA
     ("Maktoob", "maktoob.com", 1998, "mena"),
     ("Jeeran", "jeeran.com", 2000, "mena"),
-
-    # Global old-web / image-hosting pools
     ("GeoCities", "geocities.com", 1994, "global"),
     ("Photo.net", "photo.net", 1994, "global"),
     ("Webshots", "webshots.com", 1995, "global"),
@@ -105,28 +72,17 @@ COMMONS_COUNTRIES = [
     ("India", "south-asia"),
     ("Pakistan", "south-asia"),
     ("Bangladesh", "south-asia"),
-    ("Sri Lanka", "south-asia"),
     ("China", "east-asia"),
     ("Japan", "east-asia"),
-    ("South Korea", "east-asia"),
     ("Ghana", "africa"),
     ("Nigeria", "africa"),
-    ("Kenya", "africa"),
     ("South Africa", "africa"),
     ("Egypt", "mena"),
     ("Iran", "mena"),
-    ("Lebanon", "mena"),
-    ("Morocco", "mena"),
     ("Brazil", "latin-america-caribbean"),
     ("Mexico", "latin-america-caribbean"),
     ("Dominican Republic", "latin-america-caribbean"),
     ("Jamaica", "latin-america-caribbean"),
-    ("United States", "north-america"),
-    ("Canada", "north-america"),
-    ("France", "europe"),
-    ("Germany", "europe"),
-    ("United Kingdom", "europe"),
-    ("Italy", "europe"),
 ]
 
 BAD_ASSET = re.compile(
@@ -152,47 +108,15 @@ TAG_PATTERNS = [
 ]
 
 def fetch_json(url: str, retries: int = 2):
-    delay = 1.5
+    delay = 1.2
     for attempt in range(retries):
         try:
             req = urllib.request.Request(
                 url,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json,text/plain,*/*"},
             )
-            with urllib.request.urlopen(req, timeout=18) as response:
+            with urllib.request.urlopen(req, timeout=14) as response:
                 return json.loads(response.read().decode("utf-8", "replace"))
-        except Exception:
-            if attempt == retries - 1:
-                raise
-            time.sleep(delay)
-            delay *= 2
-
-def fetch_bytes(url: str, max_bytes: int = 12_000_000, retries: int = 3):
-    delay = 1.5
-    for attempt in range(retries):
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": USER_AGENT, "Accept": "image/*,*/*"},
-            )
-            with urllib.request.urlopen(req, timeout=12) as response:
-                data = response.read(max_bytes + 1)
-                if len(data) > max_bytes:
-                    raise ValueError("image too large")
-                return data
-        except urllib.error.HTTPError as exc:
-            if exc.code == 429 or 500 <= exc.code < 600:
-                if attempt == retries - 1:
-                    raise
-                retry_after = exc.headers.get("Retry-After")
-                try:
-                    wait = min(8.0, max(delay, float(retry_after)))
-                except (TypeError, ValueError):
-                    wait = delay
-                time.sleep(wait)
-                delay *= 2
-                continue
-            raise
         except Exception:
             if attempt == retries - 1:
                 raise
@@ -204,25 +128,91 @@ def infer_tags(text: str):
 
 def canonical_name(value: str):
     try:
-        name = urllib.parse.unquote(urllib.parse.urlparse(value).path.rsplit("/", 1)[-1]).lower()
+        name = urllib.parse.unquote(
+            urllib.parse.urlparse(value).path.rsplit("/", 1)[-1]
+        ).lower()
     except Exception:
         name = str(value).lower()
 
-    name = re.sub(r"\.(?:jpe?g|png)$", "", name, flags=re.I)
+    name = re.sub(r"\.(?:jpe?g|png|webp)$", "", name, flags=re.I)
     name = re.sub(
-        r"(?:^|[_-])(thumb|thumbnail|small|medium|large|orig|original|preview)(?:$|[_-])",
-        "_",
-        name,
-        flags=re.I,
+        r"(?:^|[_-])(thumb|thumbnail|small|medium|large|orig|original|preview|full)(?:$|[_-])",
+        "_", name, flags=re.I,
     )
     name = re.sub(r"[_-]\d{2,4}x\d{2,4}(?=$|[_-])", "_", name)
+    name = re.sub(r"[_-](?:sm|md|lg|xl)(?=$|[_-])", "_", name, flags=re.I)
     name = re.sub(r"[_\-\s]+", " ", name).strip()
 
     if len(name) < 8 or name in {
-        "image","photo","picture","pic","img","jpeg","jpg","dsc","scan","untitled"
+        "image", "photo", "picture", "pic", "img",
+        "jpeg", "jpg", "dsc", "scan", "untitled"
     }:
         return ""
     return name
+
+def normalize_existing_item(item):
+    if not isinstance(item, dict):
+        return None
+
+    archive = item.get("archive")
+    if not isinstance(archive, str) or not archive.startswith(
+        ("https://web.archive.org/", "https://upload.wikimedia.org/")
+    ):
+        return None
+
+    try:
+        year = int(item.get("year"))
+    except Exception:
+        return None
+
+    if not 1994 <= year <= 2008:
+        return None
+
+    original = str(item.get("original") or archive)
+    digest = str(item.get("digest") or ("legacy-url:" + archive))
+    tags = item.get("tags")
+    if not isinstance(tags, list):
+        tags = infer_tags(original)
+
+    region = str(item.get("region") or "global")
+    if region not in REGIONS:
+        region = "global"
+
+    return {
+        "year": year,
+        "source": str(item.get("source") or "Existing catalog"),
+        "region": region,
+        "country": item.get("country"),
+        "digest": digest,
+        "visualKey": str(item.get("visualKey") or canonical_name(original)),
+        "tags": tags,
+        "original": original,
+        "archive": archive,
+    }
+
+def load_existing_v1_catalog():
+    path = ROOT / "catalog.json"
+    if not path.exists():
+        print("existing v1 catalog imported: 0 (catalog.json not found)")
+        return []
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print("existing catalog read failed:", exc)
+        return []
+
+    if not isinstance(data, list):
+        return []
+
+    out = []
+    for raw in data:
+        item = normalize_existing_item(raw)
+        if item:
+            out.append(item)
+
+    print("existing v1 catalog imported:", len(out))
+    return out
 
 def query_wayback(source, domain, start_year, end_year, region):
     params = [
@@ -235,7 +225,7 @@ def query_wayback(source, domain, start_year, end_year, region):
         ("filter", "statuscode:200"),
         ("filter", "mimetype:image/jpeg"),
         ("collapse", "digest"),
-        ("limit", "700"),
+        ("limit", "500"),
     ]
     url = "https://web.archive.org/cdx/search/cdx?" + urllib.parse.urlencode(params)
 
@@ -258,7 +248,7 @@ def query_wayback(source, domain, start_year, end_year, region):
         except Exception:
             continue
 
-        if not (1994 <= year <= 2008):
+        if not 1994 <= year <= 2008:
             continue
         if not JPEG.search(original):
             continue
@@ -266,7 +256,7 @@ def query_wayback(source, domain, start_year, end_year, region):
             continue
         if mime != "image/jpeg":
             continue
-        if size and size < 18_000:
+        if size and size < MIN_ARCHIVE_BYTES:
             continue
         if not digest:
             continue
@@ -275,12 +265,14 @@ def query_wayback(source, domain, start_year, end_year, region):
             "year": year,
             "source": source,
             "region": region,
+            "country": None,
             "digest": "wayback:" + digest,
             "visualKey": canonical_name(original),
             "tags": infer_tags(urllib.parse.unquote(original)),
             "original": original,
             "archive": f"https://web.archive.org/web/{ts}id_/{original}",
         })
+
     return out
 
 def query_commons(country, region, year):
@@ -289,11 +281,10 @@ def query_commons(country, region, year):
         "generator": "categorymembers",
         "gcmtitle": f"Category:{year} photographs of {country}",
         "gcmtype": "file",
-        "gcmlimit": "max",
+        "gcmlimit": "200",
         "prop": "imageinfo|categories",
         "iiprop": "url|size|mime|sha1",
-        "iiurlwidth": "512",
-        "cllimit": "max",
+        "cllimit": "200",
         "clshow": "!hidden",
         "format": "json",
         "formatversion": "2",
@@ -302,7 +293,8 @@ def query_commons(country, region, year):
 
     try:
         data = fetch_json(url)
-    except Exception:
+    except Exception as exc:
+        print(f"skip Commons {country} {year}: {exc}")
         return []
 
     out = []
@@ -322,15 +314,16 @@ def query_commons(country, region, year):
             continue
         if not image_url.startswith("https://upload.wikimedia.org/"):
             continue
-        if min(width, height) < MIN_SHORT_SIDE or max(width, height) < MIN_LONG_SIDE:
+        if min(width, height) < 200 or max(width, height) < 300:
             continue
-        if size and size < 18_000:
+        if size and size < MIN_ARCHIVE_BYTES:
             continue
         if not sha1:
             continue
 
         title = page.get("title", "")
         categories = " ".join(c.get("title", "") for c in page.get("categories", []))
+
         out.append({
             "year": year,
             "source": "Wikimedia Commons",
@@ -341,71 +334,66 @@ def query_commons(country, region, year):
             "tags": infer_tags(f"{title} {categories}"),
             "original": title,
             "archive": image_url,
-            "fingerprintUrl": info.get("thumburl") or image_url,
             "width": width,
             "height": height,
         })
 
     return out
 
-def load_cache():
-    if not CACHE_FILE.exists():
-        return {}
-    try:
-        data = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+def dedupe_and_balance(rows):
+    random.shuffle(rows)
 
-def dhash_and_dimensions(item, cache):
-    digest = item["digest"]
-    cached = cache.get(digest)
-    if cached and cached.get("phash"):
-        result = dict(item)
-        result.update({
-            "phash": cached["phash"],
-            "width": cached.get("width", item.get("width", 0)),
-            "height": cached.get("height", item.get("height", 0)),
-        })
-        return result
+    seen_digest = set()
+    seen_visual = set()
+    seen_original = set()
 
-    try:
-        data = fetch_bytes(item.get("fingerprintUrl") or item["archive"])
-        with Image.open(io.BytesIO(data)) as im:
-            im = im.convert("L")
-            width, height = im.size
+    source_counts = defaultdict(int)
+    region_counts = defaultdict(int)
+    kept = []
 
-            if min(width, height) < MIN_SHORT_SIDE or max(width, height) < MIN_LONG_SIDE:
-                return None
+    SOURCE_CAP = 600
+    REGION_CAP = 3500
 
-            thumb = im.resize((9, 8), Image.Resampling.LANCZOS)
-            pixels = list(thumb.getdata())
+    for item in rows:
+        region = item.get("region")
+        if region not in REGIONS:
+            region = "global"
+            item["region"] = "global"
 
-            bits = 0
-            for y in range(8):
-                for x in range(8):
-                    bits = (bits << 1) | int(
-                        pixels[y * 9 + x] > pixels[y * 9 + x + 1]
-                    )
+        digest = str(item.get("digest") or "")
+        visual = str(item.get("visualKey") or "")
+        original = str(item.get("original") or "")
+        source = str(item.get("source") or "Unknown")
 
-            phash = f"{bits:016x}"
-            cache[digest] = {"phash": phash, "width": width, "height": height}
+        if digest and digest in seen_digest:
+            continue
+        if visual and visual in seen_visual:
+            continue
+        if original and original in seen_original:
+            continue
+        if source_counts[source] >= SOURCE_CAP:
+            continue
+        if region_counts[region] >= REGION_CAP:
+            continue
 
-            result = dict(item)
-            result.update({"phash": phash, "width": width, "height": height})
-            return result
-    except Exception as exc:
-        print("fingerprint skip:", item.get("source"), exc)
-        return None
+        if digest:
+            seen_digest.add(digest)
+        if visual:
+            seen_visual.add(visual)
+        if original:
+            seen_original.add(original)
 
-def hamming(a: str, b: str):
-    return (int(a, 16) ^ int(b, 16)).bit_count()
+        source_counts[source] += 1
+        region_counts[region] += 1
+        kept.append(item)
+
+    return kept, dict(source_counts), dict(region_counts)
 
 def main():
     REGION_DIR.mkdir(parents=True, exist_ok=True)
-    cache = load_cache()
 
     rows = []
+    rows.extend(load_existing_v1_catalog())
 
     wayback_jobs = []
     for source, domain, born, region in WAYBACK_SOURCES:
@@ -420,7 +408,7 @@ def main():
             try:
                 rows.extend(future.result())
             except Exception as exc:
-                print("Wayback worker:", exc)
+                print("Wayback worker error:", exc)
 
     commons_jobs = [
         (country, region, year)
@@ -428,132 +416,44 @@ def main():
         for year in range(1994, 2009)
     ]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         futures = [pool.submit(query_commons, *job) for job in commons_jobs]
         for future in concurrent.futures.as_completed(futures):
             try:
                 rows.extend(future.result())
             except Exception as exc:
-                print("Commons worker:", exc)
+                print("Commons worker error:", exc)
 
-    # Cheap exact / normalized-name dedupe first.
-    random.shuffle(rows)
-    seen_digest = set()
-    seen_name = set()
-    preliminary = []
-    per_region = defaultdict(int)
-    per_source = defaultdict(int)
+    print("raw candidates:", len(rows))
 
-    for item in rows:
-        digest = item["digest"]
-        visual_key = item.get("visualKey") or ""
-        source = item["source"]
-        region = item.get("region", "global")
+    kept, source_counts, region_counts = dedupe_and_balance(rows)
 
-        if digest in seen_digest:
-            continue
-        if visual_key and visual_key in seen_name:
-            continue
-        if per_source[source] >= 250:
-            continue
-        if per_region[region] >= 700:
-            continue
+    print("after cheap dedupe:", len(kept))
+    print("source counts:", json.dumps(source_counts, sort_keys=True))
+    print("region counts:", json.dumps(region_counts, sort_keys=True))
 
-        seen_digest.add(digest)
-        if visual_key:
-            seen_name.add(visual_key)
-
-        per_source[source] += 1
-        per_region[region] += 1
-        preliminary.append(item)
-
-    print("preliminary candidates:", len(preliminary))
-
-    # Expensive work is incremental. Cached images are effectively free.
-    # For brand-new images, process a bounded, source-balanced batch so one
-    # dead host cannot consume the whole build.
-    cached_items = []
-    uncached_by_source = defaultdict(list)
-
-    for item in preliminary:
-        if item["digest"] in cache and cache[item["digest"]].get("phash"):
-            cached_items.append(item)
-        else:
-            uncached_by_source[item["source"]].append(item)
-
-    new_batch = []
-    NEW_PER_SOURCE = 50
-    for source, items in uncached_by_source.items():
-        random.shuffle(items)
-        new_batch.extend(items[:NEW_PER_SOURCE])
-
-    random.shuffle(new_batch)
-    new_batch = new_batch[:1500]
-
-    print("cached fingerprint candidates:", len(cached_items))
-    print("new fingerprint attempts:", len(new_batch))
-
-    fingerprinted = []
-
-    for item in cached_items:
-        result = dhash_and_dimensions(item, cache)
-        if result:
-            fingerprinted.append(result)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(dhash_and_dimensions, item, cache) for item in new_batch]
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                result = future.result()
-                if result:
-                    fingerprinted.append(result)
-            except Exception as exc:
-                print("fingerprint worker:", exc)
-
-    # Global perceptual duplicate suppression.
-    random.shuffle(fingerprinted)
-    kept = []
-    kept_hashes = []
-
-    for item in fingerprinted:
-        phash = item.get("phash")
-        if phash and any(hamming(phash, existing) <= 5 for existing in kept_hashes):
-            continue
-        if phash:
-            kept_hashes.append(phash)
-        kept.append(item)
-
-    # Final region shards.
     shards = {region: [] for region in REGIONS}
+
     for item in kept:
-        region = item.get("region", "global")
-        if region not in shards:
-            region = "global"
-        published = dict(item)
-        published.pop("fingerprintUrl", None)
-        shards[region].append(published)
+        shards[item.get("region", "global")].append(item)
 
     for region in REGIONS:
         random.shuffle(shards[region])
-        path = REGION_DIR / f"{region}.json"
-        path.write_text(
+        (REGION_DIR / f"{region}.json").write_text(
             json.dumps(shards[region], separators=(",", ":"), ensure_ascii=False),
             encoding="utf-8",
         )
 
-    cache_payload = {
-        digest: value
-        for digest, value in cache.items()
-        if isinstance(value, dict) and value.get("phash")
-    }
-    CACHE_FILE.write_text(
-        json.dumps(cache_payload, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    total = sum(len(items) for items in shards.values())
 
-    version = str(int(time.time()))
+    if total == 0:
+        raise RuntimeError(
+            "No usable images were found at all. Existing catalog was not available "
+            "and every source query failed."
+        )
+
     manifest = {
-        "version": version,
+        "version": str(int(time.time())),
         "generated": int(time.time()),
         "regions": {
             region: {
@@ -562,19 +462,19 @@ def main():
             }
             for region in REGIONS
         },
-        "total": sum(len(items) for items in shards.values()),
+        "total": total,
     }
-
-    if manifest["total"] < 80:
-        raise RuntimeError(f"Too few usable images after fingerprinting: {manifest['total']} (need at least 80). Catalog was not replaced.")
 
     MANIFEST_FILE.write_text(
         json.dumps(manifest, separators=(",", ":")),
         encoding="utf-8",
     )
 
-    print("final total:", manifest["total"])
-    print("regions:", json.dumps({r: len(shards[r]) for r in REGIONS}, sort_keys=True))
+    print("final total:", total)
+    print(
+        "final regions:",
+        json.dumps({region: len(shards[region]) for region in REGIONS}, sort_keys=True),
+    )
 
 if __name__ == "__main__":
     main()
