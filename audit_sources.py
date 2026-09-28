@@ -1,294 +1,236 @@
 #!/usr/bin/env python3
 """
-Shuffler source audit v1
+Shuffler lightweight source audit v2
 
 Diagnostic only:
-- does NOT touch the live catalog
-- does NOT deploy the site
-- queries Wayback CDX metadata only
-- checks each intended source year-by-year from 1994-2008
-- writes CSV, JSON and Markdown reports
+- does NOT touch the live catalog, the site, or any deployed file
+- Wayback CDX metadata only; no image payloads are ever downloaded
+- at most 2 probes per source:
+    Probe A  broad period 1994-2008, limit 100 unique digests
+    Probe B  narrower era window, only if Probe A fails or looks weak
+- image/CDN asset hosts are derived from returned original URLs (no extra requests)
 
-This is intentionally a PROBE, not the production crawler.
-A source hitting the per-year cap is marked as capped, meaning:
-"there is at least this much material; crawl deeper later."
+Output: audit-output/source-audit.{csv,json,md}
+
+Usage:
+    python audit_sources.py                # full audit (~43-86 CDX requests)
+    python audit_sources.py --only A,B     # audit just some sources (smoke tests)
 """
 
 from __future__ import annotations
 
+import argparse
 import concurrent.futures
 import csv
 import json
 import time
 import urllib.parse
 import urllib.request
-from collections import defaultdict
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "source-audit-report"
-OUT.mkdir(exist_ok=True)
+DEFAULT_OUT = ROOT / "audit-output"
 
-USER_AGENT = "Shuffler-Source-Audit/1.0"
-START_YEAR = 1994
-END_YEAR = 2008
-PER_YEAR_LIMIT = 500
-MAX_WORKERS = 4
-TIMEOUT = 18
-RETRIES = 2
+USER_AGENT = "Shuffler-Source-Audit/2.0 (lightweight diagnostic)"
+PERIOD = (1994, 2008)
+PROBE_LIMIT = 100
+WEAK_THRESHOLD = 30
+MAX_WORKERS = 2
+TIMEOUT = 45
 
+# (source, domain, region, era)
+# era picks the Probe B fallback window: early -> 1998-2003, late -> 2004-2008
 SOURCES = [
     # Black / North American web culture
-    {"source": "BlackPlanet", "domain": "blackplanet.com", "region": "North America / Black web"},
-    {"source": "BlackVoices", "domain": "blackvoices.com", "region": "North America / Black web"},
-    {"source": "Okayplayer", "domain": "okayplayer.com", "region": "North America / Black web"},
-    {"source": "AllHipHop", "domain": "allhiphop.com", "region": "North America / Black web"},
-    {"source": "MiGente", "domain": "migente.com", "region": "Latin America / Caribbean + US Latino"},
+    ("BlackPlanet", "blackplanet.com", "North America / Black web", "early"),
+    ("BlackVoices", "blackvoices.com", "North America / Black web", "early"),
+    ("Okayplayer", "okayplayer.com", "North America / Black web", "early"),
+    ("AllHipHop", "allhiphop.com", "North America / Black web", "early"),
 
     # Africa
-    {"source": "GhanaWeb", "domain": "ghanaweb.com", "region": "Africa"},
-    {"source": "Nairaland", "domain": "nairaland.com", "region": "Africa"},
-    {"source": "HiPipo", "domain": "hipipo.com", "region": "Africa"},
-    {"source": "Mashada", "domain": "mashada.com", "region": "Africa"},
+    ("GhanaWeb", "ghanaweb.com", "Africa", "early"),
+    ("Nairaland", "nairaland.com", "Africa", "late"),
+    ("HiPipo", "hipipo.com", "Africa", "late"),
+    ("Mashada", "mashada.com", "Africa", "early"),
 
     # South Asia
-    {"source": "Rediff", "domain": "rediff.com", "region": "South Asia"},
-    {"source": "Rediff iShare", "domain": "ishare.rediff.com", "region": "South Asia"},
-    {"source": "Sify", "domain": "sify.com", "region": "South Asia"},
-    {"source": "Sulekha", "domain": "sulekha.com", "region": "South Asia"},
-    {"source": "Indiatimes", "domain": "indiatimes.com", "region": "South Asia"},
-    {"source": "BigAdda", "domain": "bigadda.com", "region": "South Asia"},
-    {"source": "Ibibo", "domain": "ibibo.com", "region": "South Asia"},
-    {"source": "BharatStudent", "domain": "bharatstudent.com", "region": "South Asia"},
+    ("Rediff", "rediff.com", "South Asia", "early"),
+    ("Rediff iShare", "ishare.rediff.com", "South Asia", "late"),
+    ("Sify", "sify.com", "South Asia", "early"),
+    ("Sulekha", "sulekha.com", "South Asia", "early"),
+    ("Indiatimes", "indiatimes.com", "South Asia", "early"),
+    ("BigAdda", "bigadda.com", "South Asia", "late"),
+    ("Ibibo", "ibibo.com", "South Asia", "late"),
+    ("BharatStudent", "bharatstudent.com", "South Asia", "late"),
+    ("Orkut", "orkut.com", "Global / strong Brazil + India usage", "late"),
 
     # East Asia
-    {"source": "Cyworld", "domain": "cyworld.com", "region": "East Asia"},
-    {"source": "Mixi", "domain": "mixi.jp", "region": "East Asia"},
-    {"source": "Xiaonei", "domain": "xiaonei.com", "region": "East Asia"},
-    {"source": "51.com", "domain": "51.com", "region": "East Asia"},
-    {"source": "QQ", "domain": "qq.com", "region": "East Asia"},
-    {"source": "Orkut", "domain": "orkut.com", "region": "Global / strong Brazil + India usage"},
+    ("Cyworld", "cyworld.com", "East Asia", "early"),
+    ("Mixi", "mixi.jp", "East Asia", "late"),
+    ("Xiaonei", "xiaonei.com", "East Asia", "late"),
+    ("51.com", "51.com", "East Asia", "late"),
+    ("QQ", "qq.com", "East Asia", "early"),
 
     # Latin America / Caribbean
-    {"source": "Fotolog", "domain": "fotolog.com", "region": "Latin America / Caribbean"},
-    {"source": "MetroFLOG", "domain": "metroflog.com", "region": "Latin America / Caribbean"},
-    {"source": "Flogao", "domain": "flogao.com.br", "region": "Latin America / Caribbean"},
-    {"source": "Hi5", "domain": "hi5.com", "region": "Global / strong Latin America usage"},
+    ("Fotolog", "fotolog.com", "Latin America / Caribbean", "late"),
+    ("MetroFLOG", "metroflog.com", "Latin America / Caribbean", "late"),
+    ("Flogao", "flogao.com.br", "Latin America / Caribbean", "late"),
+    ("MiGente", "migente.com", "Latin America / Caribbean + US Latino", "late"),
+    ("Hi5", "hi5.com", "Global / strong Latin America usage", "late"),
 
     # MENA
-    {"source": "Maktoob", "domain": "maktoob.com", "region": "MENA"},
-    {"source": "Jeeran", "domain": "jeeran.com", "region": "MENA"},
+    ("Maktoob", "maktoob.com", "MENA", "early"),
+    ("Jeeran", "jeeran.com", "MENA", "early"),
 
-    # Global old-web / image hosts
-    {"source": "TinyPic", "domain": "tinypic.com", "region": "Global"},
-    {"source": "Photobucket", "domain": "photobucket.com", "region": "Global"},
-    {"source": "Flickr static", "domain": "static.flickr.com", "region": "Global"},
-    {"source": "ImageShack", "domain": "imageshack.us", "region": "Global"},
-    {"source": "Fotki", "domain": "fotki.com", "region": "Global"},
-    {"source": "PBase", "domain": "pbase.com", "region": "Global"},
-    {"source": "PictureTrail", "domain": "picturetrail.com", "region": "Global"},
-    {"source": "Webshots", "domain": "webshots.com", "region": "Global"},
-    {"source": "Photo.net", "domain": "photo.net", "region": "Global"},
-    {"source": "SmugMug", "domain": "smugmug.com", "region": "Global"},
-    {"source": "Zooomr", "domain": "zooomr.com", "region": "Global"},
-    {"source": "GeoCities", "domain": "geocities.com", "region": "Global"},
-    {"source": "Angelfire", "domain": "angelfire.com", "region": "Global"},
-    {"source": "Tripod", "domain": "tripod.com", "region": "Global"},
+    # Global legacy image hosts
+    ("TinyPic", "tinypic.com", "Global", "late"),
+    ("Photobucket", "photobucket.com", "Global", "late"),
+    ("Flickr static", "static.flickr.com", "Global", "late"),
+    ("ImageShack", "imageshack.us", "Global", "late"),
+    ("Fotki", "fotki.com", "Global", "early"),
+    ("PBase", "pbase.com", "Global", "early"),
+    ("PictureTrail", "picturetrail.com", "Global", "early"),
+    ("Webshots", "webshots.com", "Global", "early"),
+    ("Photo.net", "photo.net", "Global", "early"),
+    ("SmugMug", "smugmug.com", "Global", "late"),
+    ("Zooomr", "zooomr.com", "Global", "late"),
+    ("GeoCities", "geocities.com", "Global", "early"),
+    ("Angelfire", "angelfire.com", "Global", "early"),
+    ("Tripod", "tripod.com", "Global", "early"),
 ]
 
-
-def fetch_json(url: str):
-    delay = 1.5
-    last_error = None
-    for attempt in range(RETRIES + 1):
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Accept": "application/json,text/plain,*/*",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
-                return json.loads(response.read().decode("utf-8", "replace"))
-        except Exception as exc:
-            last_error = exc
-            if attempt >= RETRIES:
-                raise
-            time.sleep(delay)
-            delay *= 2
-    raise last_error
+ERA_WINDOWS = {"early": (1998, 2003), "late": (2004, 2008)}
 
 
-def audit_year(source: str, domain: str, region: str, year: int):
+def cdx_url(domain: str, start: int, end: int) -> str:
     params = [
         ("url", domain),
         ("matchType", "domain"),
         ("output", "json"),
         ("fl", "timestamp,original,mimetype,statuscode,digest,length"),
-        ("from", str(year)),
-        ("to", str(year)),
+        ("from", str(start)),
+        ("to", str(end)),
         ("filter", "statuscode:200"),
         ("filter", "mimetype:image/.*"),
         ("collapse", "digest"),
-        ("limit", str(PER_YEAR_LIMIT)),
+        ("limit", str(PROBE_LIMIT)),
     ]
-    url = "https://web.archive.org/cdx/search/cdx?" + urllib.parse.urlencode(params)
+    return "https://web.archive.org/cdx/search/cdx?" + urllib.parse.urlencode(params)
 
-    try:
-        data = fetch_json(url)
-    except Exception as exc:
-        return {
-            "source": source,
-            "domain": domain,
-            "region": region,
-            "year": year,
-            "ok": False,
-            "error": f"{type(exc).__name__}: {exc}",
-            "rows": [],
-            "count": 0,
-            "capped": False,
-        }
 
-    rows = data[1:] if isinstance(data, list) and data else []
-    cleaned = [row for row in rows if isinstance(row, list) and len(row) >= 6]
+def fetch_cdx(url: str):
+    """One attempt + one immediate retry. Returns (rows, error)."""
+    last_error = ""
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": USER_AGENT, "Accept": "application/json,text/plain,*/*"},
+            )
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
+                data = json.loads(response.read().decode("utf-8", "replace"))
+            rows = [r for r in (data[1:] if isinstance(data, list) else []) if isinstance(r, list) and len(r) >= 6]
+            return rows, ""
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            if attempt == 0:
+                time.sleep(1.0)
+    return [], last_error
+
+
+def audit_source(name: str, domain: str, region: str, era: str):
+    probes = []
+    rows_all = []
+
+    rows_a, err_a = fetch_cdx(cdx_url(domain, PERIOD[0], PERIOD[1]))
+    probes.append({
+        "probe": "A",
+        "window": list(PERIOD),
+        "ok": not err_a,
+        "error": err_a,
+        "rows": len(rows_a),
+        "capped": len(rows_a) >= PROBE_LIMIT,
+    })
+    rows_all.extend(rows_a)
+
+    capped = probes[0]["capped"]
+    digests = {r[4] for r in rows_all if len(r) > 4 and r[4]}
+    if not capped and (err_a or len(digests) < WEAK_THRESHOLD):
+        b_start, b_end = ERA_WINDOWS[era]
+        rows_b, err_b = fetch_cdx(cdx_url(domain, b_start, b_end))
+        probes.append({
+            "probe": "B",
+            "window": [b_start, b_end],
+            "ok": not err_b,
+            "error": err_b,
+            "rows": len(rows_b),
+            "capped": len(rows_b) >= PROBE_LIMIT,
+        })
+        rows_all.extend(rows_b)
+
+    digests = {r[4] for r in rows_all if len(r) > 4 and r[4]}
+    years = sorted({int(r[0][:4]) for r in rows_all if r[0] and r[0][:4].isdigit() and PERIOD[0] <= int(r[0][:4]) <= PERIOD[1]})
+    capped = any(p["capped"] for p in probes)
+
+    hosts = Counter()
+    for r in rows_all:
+        host = urllib.parse.urlparse(r[1]).hostname or ""
+        if host:
+            hosts[host.lower()] += 1
+
+    root = domain.lower()
+    asset_hosts = [(h, c) for h, c in hosts.most_common(20) if h != root and h != "www." + root][:5]
 
     return {
-        "source": source,
+        "source": name,
         "domain": domain,
         "region": region,
-        "year": year,
-        "ok": True,
-        "error": "",
-        "rows": cleaned,
-        "count": len(cleaned),
-        "capped": len(cleaned) >= PER_YEAR_LIMIT,
+        "probes": probes,
+        "requests": len(probes),
+        "rows": sum(p["rows"] for p in probes),
+        "unique_digests": len(digests),
+        "capped": capped,
+        "years_seen": years,
+        "asset_domains": [{"host": h, "count": c} for h, c in asset_hosts],
+        "status": status_for(probes, len(digests)),
     }
 
 
-def status_for(unique_digests: int, capped_years: int, failed_years: int):
-    if unique_digests == 0:
-        return "ERROR / EMPTY" if failed_years else "NO HITS"
-    if capped_years >= 2 or unique_digests >= 1500:
+def status_for(probes, digest_count: int) -> str:
+    if not any(p["ok"] for p in probes):
+        return "ERROR"
+    capped = any(p["capped"] for p in probes)
+    if digest_count == 0:
+        return "NO HITS"
+    if digest_count >= 150 or (capped and digest_count >= 100):
         return "STRONG"
-    if capped_years >= 1 or unique_digests >= 500:
+    if capped or digest_count >= 50:
         return "PROMISING"
     return "SMALL"
 
 
-def main():
-    jobs = []
-    for s in SOURCES:
-        for year in range(START_YEAR, END_YEAR + 1):
-            jobs.append((s["source"], s["domain"], s["region"], year))
+def write_reports(results, out_dir: Path, total_requests: int):
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Auditing {len(SOURCES)} sources across {END_YEAR - START_YEAR + 1} years")
-    print(f"{len(jobs)} CDX metadata queries, {MAX_WORKERS} at a time")
-    print("This is diagnostic only; it does not modify the live catalog.\n")
+    results = sorted(results, key=lambda r: (r["unique_digests"], r["rows"]), reverse=True)
 
-    results = []
+    by_status = Counter(r["status"] for r in results)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = [pool.submit(audit_year, *job) for job in jobs]
-        for n, future in enumerate(concurrent.futures.as_completed(futures), start=1):
-            result = future.result()
-            results.append(result)
-            if result["ok"]:
-                cap = " CAP" if result["capped"] else ""
-                print(f'[{n}/{len(jobs)}] {result["source"]} {result["year"]}: {result["count"]}{cap}')
-            else:
-                print(f'[{n}/{len(jobs)}] {result["source"]} {result["year"]}: ERROR {result["error"]}')
-
-    grouped = defaultdict(list)
-    for r in results:
-        grouped[r["source"]].append(r)
-
-    summary = []
-
-    for s in SOURCES:
-        name = s["source"]
-        yearly = sorted(grouped[name], key=lambda x: x["year"])
-
-        urls = set()
-        digests = set()
-        mimetypes = defaultdict(int)
-        years_with_hits = []
-        capped_years = []
-        failed_years = []
-
-        sampled_rows = 0
-
-        for y in yearly:
-            if not y["ok"]:
-                failed_years.append(y["year"])
-                continue
-            if y["count"]:
-                years_with_hits.append(y["year"])
-            if y["capped"]:
-                capped_years.append(y["year"])
-
-            for row in y["rows"]:
-                sampled_rows += 1
-                timestamp, original, mimetype, statuscode, digest, length = row[:6]
-                if original:
-                    urls.add(original)
-                if digest:
-                    digests.add(digest)
-                mimetypes[mimetype or "unknown"] += 1
-
-        record = {
-            "source": name,
-            "domain": s["domain"],
-            "region": s["region"],
-            "sampled_rows": sampled_rows,
-            "unique_urls": len(urls),
-            "unique_digests": len(digests),
-            "years_with_hits": years_with_hits,
-            "capped_years": capped_years,
-            "failed_years": failed_years,
-            "status": status_for(len(digests), len(capped_years), len(failed_years)),
-            "top_mimetypes": sorted(
-                mimetypes.items(),
-                key=lambda kv: kv[1],
-                reverse=True,
-            )[:5],
-        }
-        summary.append(record)
-
-    summary.sort(key=lambda x: (x["unique_digests"], x["unique_urls"]), reverse=True)
-
-    region_totals = defaultdict(lambda: {
-        "sources": 0,
-        "unique_digests_sum": 0,
-        "sources_with_hits": 0,
-        "strong_or_promising": 0,
-    })
-
-    for row in summary:
-        r = region_totals[row["region"]]
-        r["sources"] += 1
-        r["unique_digests_sum"] += row["unique_digests"]
-        if row["unique_digests"] > 0:
-            r["sources_with_hits"] += 1
-        if row["status"] in {"STRONG", "PROMISING"}:
-            r["strong_or_promising"] += 1
-
-    json_path = OUT / "source-audit.json"
-    csv_path = OUT / "source-audit.csv"
-    md_path = OUT / "source-audit.md"
-
-    json_path.write_text(
+    (out_dir / "source-audit.json").write_text(
         json.dumps(
             {
                 "generated_unix": int(time.time()),
-                "period": [START_YEAR, END_YEAR],
-                "per_year_limit": PER_YEAR_LIMIT,
+                "period": list(PERIOD),
+                "probe_limit": PROBE_LIMIT,
+                "cdx_requests_made": total_requests,
+                "sources_tested": len(results),
+                "status_counts": dict(by_status),
                 "note": (
-                    "Counts are audit lower bounds / samples. A capped year means "
-                    "the source has more results than this probe retrieved."
+                    "Metadata-only probe. unique_digests is a lower-bound sample; "
+                    "a capped probe hit the row limit, so the real source is larger."
                 ),
-                "sources": summary,
-                "region_totals": dict(region_totals),
+                "sources": results,
             },
             indent=2,
             ensure_ascii=False,
@@ -296,82 +238,119 @@ def main():
         encoding="utf-8",
     )
 
-    with csv_path.open("w", newline="", encoding="utf-8") as f:
+    with (out_dir / "source-audit.csv").open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([
             "source", "domain", "region", "status",
-            "sampled_rows", "unique_urls", "unique_digests",
-            "years_with_hits", "capped_years", "failed_years"
+            "cdx_requests", "rows", "unique_digests", "capped",
+            "years_seen", "asset_domains", "errors",
         ])
-        for row in summary:
+        for r in results:
             writer.writerow([
-                row["source"],
-                row["domain"],
-                row["region"],
-                row["status"],
-                row["sampled_rows"],
-                row["unique_urls"],
-                row["unique_digests"],
-                " ".join(map(str, row["years_with_hits"])),
-                " ".join(map(str, row["capped_years"])),
-                " ".join(map(str, row["failed_years"])),
+                r["source"], r["domain"], r["region"], r["status"],
+                r["requests"], r["rows"], r["unique_digests"], "yes" if r["capped"] else "no",
+                " ".join(map(str, r["years_seen"])),
+                "; ".join(f'{a["host"]}({a["count"]})' for a in r["asset_domains"]),
+                " | ".join(p["error"] for p in r["probes"] if p["error"]),
             ])
 
     lines = [
-        "# Shuffler Source Audit",
+        "# Shuffler Source Audit (lightweight)",
         "",
-        f"Period: {START_YEAR}–{END_YEAR}",
+        f"Period: {PERIOD[0]}-{PERIOD[1]}  ",
+        f"CDX metadata requests made: {total_requests}  ",
+        f"Sources tested: {len(results)}",
         "",
-        (
-            f"Each source is probed year-by-year, up to {PER_YEAR_LIMIT} unique-content "
-            "CDX rows per year. **CAP** means the audit hit the limit, so the real source "
-            "is larger than the reported probe."
-        ),
+        "Each source gets one broad probe (up to "
+        f"{PROBE_LIMIT} unique digests). A second narrower probe runs only when the "
+        "first fails or returns fewer than "
+        f"{WEAK_THRESHOLD} results. **Cap hit** means the probe reached the "
+        f"{PROBE_LIMIT}-row limit, so the true source is larger.",
         "",
-        "| Source | Region | Unique digests | Unique URLs | Hit years | Capped years | Failed years | Status |",
-        "|---|---|---:|---:|---:|---:|---:|---|",
+        "| Source | Region | Probe hits | Cap hit | Years seen | Asset domains | Status |",
+        "|---|---|---:|---|---|---|---|",
     ]
 
-    for row in summary:
+    for r in results:
+        if r["years_seen"]:
+            yrs = f'{r["years_seen"][0]}-{r["years_seen"][-1]} ({len(r["years_seen"])})'
+        else:
+            yrs = "-"
+        assets = "; ".join(a["host"] for a in r["asset_domains"][:3]) or "-"
         lines.append(
-            f'| {row["source"]} | {row["region"]} | {row["unique_digests"]} | '
-            f'{row["unique_urls"]} | {len(row["years_with_hits"])} | '
-            f'{len(row["capped_years"])} | {len(row["failed_years"])} | {row["status"]} |'
-        )
-
-    lines += ["", "## Region summary", "",
-              "| Region | Sources tested | Sources with hits | Strong/promising | Sum of sampled unique digests |",
-              "|---|---:|---:|---:|---:|"]
-
-    for region, r in sorted(region_totals.items()):
-        lines.append(
-            f'| {region} | {r["sources"]} | {r["sources_with_hits"]} | '
-            f'{r["strong_or_promising"]} | {r["unique_digests_sum"]} |'
+            f'| {r["source"]} | {r["region"]} | {r["unique_digests"]} | '
+            f'{"YES" if r["capped"] else "no"} | {yrs} | {assets} | {r["status"]} |'
         )
 
     lines += [
         "",
-        "## How to read this",
+        "## Status counts",
         "",
-        "- **STRONG**: clearly worth a production crawl.",
-        "- **PROMISING**: enough material to investigate deeper.",
-        "- **SMALL**: some usable archive material, but not enough to anchor a region.",
-        "- **NO HITS**: no matching archived image metadata found in this probe.",
-        "- **ERROR / EMPTY**: the source could not be evaluated reliably because queries failed.",
+        "| Status | Sources |",
+        "|---|---:|",
+    ]
+    for status in ("STRONG", "PROMISING", "SMALL", "NO HITS", "ERROR"):
+        lines.append(f"| {status} | {by_status.get(status, 0)} |")
+
+    lines += [
         "",
-        "This report does not alter the live Shuffler catalog.",
+        "STRONG = clearly worth a production crawl. PROMISING = investigate deeper. "
+        "SMALL = some material, not enough to anchor a region. NO HITS = archive "
+        "answered but no image metadata found (may be queried at the wrong domain). "
+        "ERROR = archive queries failed.",
+        "",
+        "This audit is read-only; it does not alter the live Shuffler catalog.",
     ]
 
-    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (out_dir / "source-audit.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    print("\n=== TOP SOURCES ===")
-    for row in summary[:15]:
-        print(
-            f'{row["source"]:<18} {row["unique_digests"]:>5} digests  '
-            f'{len(row["capped_years"]):>2} capped years  {row["status"]}'
-        )
 
-    print("\nReports written to:", OUT)
+def main():
+    parser = argparse.ArgumentParser(description="Shuffler lightweight source audit")
+    parser.add_argument("--only", default="", help="comma-separated source names to audit (for smoke tests)")
+    parser.add_argument("--out", default=str(DEFAULT_OUT), help="output directory")
+    args = parser.parse_args()
+
+    sources = SOURCES
+    if args.only:
+        wanted = {w.strip().lower() for w in args.only.split(",") if w.strip()}
+        sources = [s for s in SOURCES if s[0].lower() in wanted]
+        if not sources:
+            raise SystemExit(f"--only matched none of the {len(SOURCES)} known sources")
+
+    print(f"Auditing {len(sources)} sources (max 2 CDX metadata probes each)")
+    print("Read-only diagnostic; catalog and site are untouched.\n")
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {pool.submit(audit_source, *s): s[0] for s in sources}
+        done = 0
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                result = {
+                    "source": name,
+                    "domain": next((s[1] for s in sources if s[0] == name), ""),
+                    "region": next((s[2] for s in sources if s[0] == name), ""),
+                    "probes": [{"probe": "A", "window": list(PERIOD), "ok": False,
+                                "error": f"{type(exc).__name__}: {exc}", "rows": 0, "capped": False}],
+                    "requests": 1, "rows": 0, "unique_digests": 0, "capped": False,
+                    "years_seen": [], "asset_domains": [], "status": "ERROR",
+                }
+            results.append(result)
+            done += 1
+            print(f'[{done}/{len(sources)}] {result["source"]:<16} '
+                  f'digests={result["unique_digests"]:>4}  {"CAP " if result["capped"] else "    "}{result["status"]}')
+
+    total_requests = sum(r["requests"] for r in results)
+    out_dir = Path(args.out)
+    write_reports(results, out_dir, total_requests)
+
+    print(f"\nCDX metadata requests made: {total_requests}")
+    print(f"Reports written to: {out_dir}")
+    print("source-audit.csv / source-audit.json / source-audit.md")
 
 
 if __name__ == "__main__":

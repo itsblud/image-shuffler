@@ -1,4 +1,4 @@
-name: Audit image sources
+name: Audit image sources (lightweight)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -20,13 +20,16 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Run source audit
+      - name: Run lightweight source audit
         run: python audit_sources.py
 
-      - name: Upload audit report
+      - name: Show audit summary
+        run: cat audit-output/source-audit.md
+
+      - name: Upload audit output
         uses: actions/upload-artifact@v7
         with:
           name: shuffler-source-audit
-          path: source-audit-report/
+          path: audit-output/
           if-no-files-found: error
           retention-days: 7
