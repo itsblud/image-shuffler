@@ -1,5 +1,10 @@
 [
   {
+    "version": "2.12",
+    "notes": "Remove the floating next button and skins; add thumbnail moderation, mobile-friendly controls, and filter counts.",
+    "count": 30787
+  },
+  {
     "version": "2.11",
     "notes": "Add six selectable device-inspired skins with CSS-drawn controls and larger mobile moderation buttons.",
     "count": 30787
