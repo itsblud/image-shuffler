@@ -1,0 +1,21 @@
+{
+  "version": "2.6",
+  "notes": "Previously published build. Preserved from the existing public site; no social-media toggle.",
+  "catalog_count": 324,
+  "sha256": {
+    "index.html": "0a59aba9e3450c968251447321c7835ea4cd87f60afa5f9cbe7839aa2946e970",
+    "app.js": "a0735fe3f112946821ff7b1e3e214694cf5c84c66ce2309934cfbaf03f23cdaa",
+    "styles.css": "3e97a9623bbcbf8bf8ba4d9f7261a401f27ce5abc56be44d3f42bb963386d619",
+    "pixel.woff2": "59c3d73985b657bdb1065bf2d4ddeb7bd889c0c0f2663d6e65a6ce8d18916d68",
+    "pixel-bold.woff2": "ed4cc16bf69e9727dc4cf289565c612e11b308772084e1ad87acfd2abb89496e",
+    "catalog/manifest.json": "8ec4cfc253a66e8816b831d5a9d2b142afe0c2e257ae826e9f41e7da4f1c56af",
+    "catalog/regions/north-america.json": "2fe6f5831b1308837173fc6ffd86adbb7453135c1d1eebcc8dd830df0c6012e4",
+    "catalog/regions/latin-america-caribbean.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "catalog/regions/africa.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "catalog/regions/south-asia.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "catalog/regions/east-asia.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "catalog/regions/mena.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "catalog/regions/europe.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "catalog/regions/global.json": "b55218f9044b8397d5a2951836c8490d1e802aa5145c3134a5d8018742b3892b"
+  }
+}

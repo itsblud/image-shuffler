@@ -46,7 +46,6 @@ html,body{
 
 button,input,select,label{font:inherit}
 button{color:inherit}
-.release-info a{color:inherit;text-underline-offset:3px}
 
 #app{
   position:relative;

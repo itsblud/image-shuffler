@@ -15,11 +15,10 @@ const closeControlsBtn = $('#closeControls');
 const applyControlsBtn = $('#applyControls');
 const themeToggleBtn = $('#themeToggle');
 
-const eraSelectEl = $('#eraSelect');
+const yearFromEl = $('#yearFrom');
+const yearToEl = $('#yearTo');
 const yearsEl = $('#years');
 const autoplaySecondsEl = $('#autoplaySeconds');
-
-const AFRICA_EXTENDED_MAX_YEAR = 2016;
 
 const REGION_IDS = [
   'north-america',
@@ -33,7 +32,6 @@ const REGION_IDS = [
 ];
 
 const FILTER_IDS = [
-  'social-media',
   'people',
   'signs',
   'fashion',
@@ -52,9 +50,8 @@ const DEFAULT_PREFS = {
   yearFrom: 1994,
   yearTo: 2008,
   autoplaySeconds: 8,
-  regions: Object.fromEntries(REGION_IDS.map((id) => [id, id !== 'africa'])),
+  regions: Object.fromEntries(REGION_IDS.map((id) => [id, true])),
   filters: {
-    'social-media': true,
     people: true,
     signs: true,
     fashion: true,
@@ -70,14 +67,9 @@ const DEFAULT_PREFS = {
 };
 
 const LOOKAHEAD = 3;
-// Source-based classification: dedicated social networks, not general image hosts.
-const SOCIAL_MEDIA_SOURCES = new Set([
-  'BlackPlanet', 'MiGente', '51.com', 'QQ', 'Xiaonei', 'Cyworld',
-  'Orkut', 'Mixi', 'Hi5', 'BigAdda', 'Ibibo', 'BharatStudent'
-]);
 const MIN_SHORT_SIDE = 200;
 const MIN_LONG_SIDE = 300;
-const PERSISTENT_SEEN_KEY = 'shufflerSeenV26';
+const PERSISTENT_SEEN_KEY = 'shufflerSeenV25';
 const PERSISTENT_SEEN_LIMIT = 3500;
 
 let prefs = loadPrefs();
@@ -108,23 +100,7 @@ function cloneDefaults() {
 }
 
 function clampYear(y) {
-  return Math.max(1994, Math.min(AFRICA_EXTENDED_MAX_YEAR, Number(y) || 1994));
-}
-
-function regionStateAfricaOnly(regions) {
-  return !!regions.africa && REGION_IDS.every((id) => id === 'africa' || !regions[id]);
-}
-
-function africaOnlyMode() {
-  return regionStateAfricaOnly(prefs.regions);
-}
-
-function effectiveYearRange() {
-  const from = clampYear(prefs.yearFrom);
-  let to = clampYear(prefs.yearTo);
-  if (africaOnlyMode() && to >= 2008) to = AFRICA_EXTENDED_MAX_YEAR;
-  if (to > AFRICA_EXTENDED_MAX_YEAR) to = AFRICA_EXTENDED_MAX_YEAR;
-  return [Math.min(from, to), Math.max(from, to)];
+  return Math.max(1994, Math.min(2008, Number(y) || 1994));
 }
 
 function loadPrefs() {
@@ -144,7 +120,6 @@ function loadPrefs() {
       if (raw.filters && typeof raw.filters[id] === 'boolean') result.filters[id] = raw.filters[id];
     }
   } catch {}
-  if (!regionStateAfricaOnly(result.regions)) result.regions.africa = false;
   return result;
 }
 
@@ -192,31 +167,15 @@ function applyTheme() {
 }
 
 function updateYearLabel() {
-  const option = eraSelectEl.selectedOptions[0];
-  const liveRegions = {};
-  for (const id of REGION_IDS) liveRegions[id] = $(`#region-${id}`).checked;
-
-  let from = clampYear(option ? option.dataset.from : 1994);
-  let to = clampYear(option ? option.dataset.to : 2008);
-  if (regionStateAfricaOnly(liveRegions) && to >= 2008) to = AFRICA_EXTENDED_MAX_YEAR;
-
-  yearsEl.textContent = regionStateAfricaOnly(liveRegions)
-    ? `${from} – ${to} · Africa mode`
-    : `${from} – ${to}`;
+  let a = clampYear(yearFromEl.value);
+  let b = clampYear(yearToEl.value);
+  if (a > b) [a, b] = [b, a];
+  yearsEl.textContent = `${a} – ${b}`;
 }
 
 function syncControlsFromPrefs() {
-  const from = prefs.yearFrom;
-  const to = prefs.yearTo;
-  let matched = false;
-  for (const option of eraSelectEl.options) {
-    if (+option.dataset.from === from && +option.dataset.to === Math.min(to, 2008)) {
-      eraSelectEl.value = option.value;
-      matched = true;
-      break;
-    }
-  }
-  if (!matched) eraSelectEl.selectedIndex = 0;
+  yearFromEl.value = prefs.yearFrom;
+  yearToEl.value = prefs.yearTo;
   autoplaySecondsEl.value = String(prefs.autoplaySeconds);
   for (const id of REGION_IDS) {
     $(`#region-${id}`).checked = !!prefs.regions[id];
@@ -228,9 +187,12 @@ function syncControlsFromPrefs() {
 }
 
 function readControlsIntoPrefs() {
-  const option = eraSelectEl.selectedOptions[0];
-  prefs.yearFrom = clampYear(option ? option.dataset.from : 1994);
-  prefs.yearTo = clampYear(option ? option.dataset.to : 2008);
+  let a = clampYear(yearFromEl.value);
+  let b = clampYear(yearToEl.value);
+  if (a > b) [a, b] = [b, a];
+
+  prefs.yearFrom = a;
+  prefs.yearTo = b;
   prefs.autoplaySeconds = +autoplaySecondsEl.value;
 
   for (const id of REGION_IDS) {
@@ -259,10 +221,8 @@ function itemKey(item) {
 }
 
 function itemAllowed(item) {
-  if (!prefs.filters['social-media'] && SOCIAL_MEDIA_SOURCES.has(item.source)) return false;
-  const [from, to] = effectiveYearRange();
   const year = Number(item.year);
-  if (year < from || year > to) return false;
+  if (year < prefs.yearFrom || year > prefs.yearTo) return false;
 
   const tags = new Set(Array.isArray(item.tags) ? item.tags : []);
   for (const id of FILTER_IDS) {
@@ -272,8 +232,7 @@ function itemAllowed(item) {
 }
 
 function selectedRegions() {
-  if (africaOnlyMode()) return ['africa'];
-  return REGION_IDS.filter((id) => id !== 'africa' && prefs.regions[id]);
+  return REGION_IDS.filter((id) => prefs.regions[id]);
 }
 
 async function loadManifest() {
@@ -425,13 +384,13 @@ function preloadImage(item, token, timeoutMs = 12000) {
   });
 }
 
-async function fillBuffer(target = LOOKAHEAD) {
+async function fillBuffer() {
   if (fillPromise) return fillPromise;
 
   const token = generation;
 
   fillPromise = (async () => {
-    while (preloadBuffer.length < target && token === generation) {
+    while (preloadBuffer.length < LOOKAHEAD && token === generation) {
       const item = popBalancedCandidate();
       if (!item) break;
 
@@ -446,16 +405,14 @@ async function fillBuffer(target = LOOKAHEAD) {
       }
     }
   })().finally(() => {
-    if (token === generation) fillPromise = null;
+    fillPromise = null;
   });
 
   return fillPromise;
 }
 
 async function takePreparedEntry() {
-  const token = generation;
-  if (!preloadBuffer.length) await fillBuffer(1);
-  if (token !== generation) return null;
+  if (!preloadBuffer.length) await fillBuffer();
   const entry = preloadBuffer.shift() || null;
   if (entry) {
     reserved.delete(entry.key);
@@ -477,8 +434,6 @@ function render(entry) {
 }
 
 async function advance() {
-  if (nextBtn.disabled) return;
-  const token = generation;
   clearAutoplayTimer();
 
   if (historyIndex < history.length - 1) {
@@ -492,7 +447,6 @@ async function advance() {
 
   try {
     const entry = await takePreparedEntry();
-    if (token !== generation) return;
     if (!entry) {
       setMessage('No unseen images left for the current controls right now.');
       pauseAutoplay(true);
@@ -577,26 +531,20 @@ function pauseAndRevealCurrentImage() {
 }
 
 async function applyControls() {
-  const current = history[historyIndex];
   readControlsIntoPrefs();
   savePrefs();
   overlay.classList.remove('open');
 
-  generation += 1;
-  clearPreloadBuffer();
-  const regions = selectedRegions();
-  history = history.slice(0, historyIndex + 1).filter((entry) =>
-    itemAllowed(entry.item) && regions.includes(entry.item.region)
-  );
-  historyIndex = history.length - 1;
+  if (historyIndex < history.length - 1) {
+    history = history.slice(0, historyIndex + 1);
+  }
+
   await ensureSelectedRegionsLoaded();
   rebuildQueues();
-  nextBtn.disabled = false;
-  if (!current || !history.includes(current)) await advance();
-  else {
-    render(current);
-    fillBuffer();
-  }
+  fillBuffer();
+
+  if (!history.length) await advance();
+  else render(history[historyIndex]);
 }
 
 function shouldIgnoreKey(event) {
@@ -663,21 +611,8 @@ themeToggleBtn.addEventListener('click', () => {
   savePrefs();
 });
 
-eraSelectEl.addEventListener('change', updateYearLabel);
-for (const id of REGION_IDS) {
-  $(`#region-${id}`).addEventListener('change', () => {
-    if ($(`#region-${id}`).checked) {
-      if (id === 'africa') {
-        for (const other of REGION_IDS) {
-          if (other !== 'africa') $(`#region-${other}`).checked = false;
-        }
-      } else {
-        $('#region-africa').checked = false;
-      }
-    }
-    updateYearLabel();
-  });
-}
+yearFromEl.addEventListener('input', updateYearLabel);
+yearToEl.addEventListener('input', updateYearLabel);
 
 async function boot() {
   applyTheme();
@@ -688,6 +623,7 @@ async function boot() {
     await loadManifest();
     await ensureSelectedRegionsLoaded();
     rebuildQueues();
+    await fillBuffer();
     await advance();
   } catch {
     setMessage('Catalog is not ready yet.');

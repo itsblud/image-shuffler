@@ -17,7 +17,7 @@ REGION_DIR = CATALOG_DIR / "regions"
 MANIFEST_FILE = CATALOG_DIR / "manifest.json"
 
 USER_AGENT = "Shuffler/2.2 (private archival image browser)"
-MIN_ARCHIVE_BYTES = 18_000
+MIN_ARCHIVE_BYTES = 0
 
 REGIONS = [
     "north-america",
@@ -30,42 +30,47 @@ REGIONS = [
     "global",
 ]
 
+# (source, domain, born_year, region, end_year)
+# Africa gets an extended window (through 2016) because internet adoption
+# came later there; all other regions stop at 2008.
 WAYBACK_SOURCES = [
-    ("BlackPlanet", "blackplanet.com", 1999, "north-america"),
-    ("BlackVoices", "blackvoices.com", 1995, "north-america"),
-    ("Okayplayer", "okayplayer.com", 1999, "north-america"),
-    ("AllHipHop", "allhiphop.com", 1998, "north-america"),
-    ("GhanaWeb", "ghanaweb.com", 1999, "africa"),
-    ("Nairaland", "nairaland.com", 2005, "africa"),
-    ("Rediff", "rediff.com", 1996, "south-asia"),
-    ("Sify", "sify.com", 1998, "south-asia"),
-    ("Sulekha", "sulekha.com", 1998, "south-asia"),
-    ("Indiatimes", "indiatimes.com", 1996, "south-asia"),
-    ("Cyworld", "cyworld.com", 1999, "east-asia"),
-    ("Mixi", "mixi.jp", 2004, "east-asia"),
-    ("Xiaonei", "xiaonei.com", 2005, "east-asia"),
-    ("51.com", "51.com", 2005, "east-asia"),
-    ("QQ", "qq.com", 1999, "east-asia"),
-    ("Fotolog", "fotolog.com", 2002, "latin-america-caribbean"),
-    ("MiGente", "migente.com", 2000, "latin-america-caribbean"),
-    ("Maktoob", "maktoob.com", 1998, "mena"),
-    ("Jeeran", "jeeran.com", 2000, "mena"),
-    ("GeoCities", "geocities.com", 1994, "global"),
-    ("Photo.net", "photo.net", 1994, "global"),
-    ("Webshots", "webshots.com", 1995, "global"),
-    ("Tripod", "tripod.com", 1995, "global"),
-    ("Angelfire", "angelfire.com", 1996, "global"),
-    ("Fotki", "fotki.com", 1998, "global"),
-    ("PictureTrail", "picturetrail.com", 1998, "global"),
-    ("PBase", "pbase.com", 1999, "global"),
-    ("SmugMug", "smugmug.com", 2002, "global"),
-    ("Photobucket", "photobucket.com", 2003, "global"),
-    ("ImageShack", "imageshack.us", 2003, "global"),
-    ("TinyPic", "tinypic.com", 2004, "global"),
-    ("Flickr", "static.flickr.com", 2004, "global"),
-    ("Zooomr", "zooomr.com", 2005, "global"),
-    ("Orkut", "orkut.com", 2004, "global"),
-    ("Hi5", "hi5.com", 2003, "global"),
+    ("BlackPlanet", "blackplanet.com", 1999, "north-america", 2008),
+    ("BlackVoices", "blackvoices.com", 1995, "north-america", 2008),
+    ("Okayplayer", "okayplayer.com", 1999, "north-america", 2008),
+    ("AllHipHop", "allhiphop.com", 1998, "north-america", 2008),
+    ("GhanaWeb", "ghanaweb.com", 1999, "africa", 2016),
+    ("Nairaland", "nairaland.com", 2005, "africa", 2016),
+    ("Rediff", "rediff.com", 1996, "south-asia", 2008),
+    ("Sify", "sify.com", 1998, "south-asia", 2008),
+    ("Sulekha", "sulekha.com", 1998, "south-asia", 2008),
+    ("Indiatimes", "indiatimes.com", 1996, "south-asia", 2008),
+    ("Cyworld", "cyworld.com", 1999, "east-asia", 2008),
+    ("Mixi", "mixi.jp", 2004, "east-asia", 2008),
+    ("Xiaonei", "xiaonei.com", 2005, "east-asia", 2008),
+    ("51.com", "51.com", 2005, "east-asia", 2008),
+    ("QQ", "qq.com", 1999, "east-asia", 2008),
+    ("Fotolog", "fotolog.com", 2002, "latin-america-caribbean", 2008),
+    ("MiGente", "migente.com", 2000, "latin-america-caribbean", 2008),
+    ("Maktoob", "maktoob.com", 1998, "mena", 2008),
+    ("Jeeran", "jeeran.com", 2000, "mena", 2008),
+    ("GeoCities", "geocities.com", 1994, "global", 2008),
+    ("Photo.net", "photo.net", 1994, "global", 2008),
+    ("Webshots", "webshots.com", 1995, "global", 2008),
+    ("Tripod", "tripod.com", 1995, "global", 2008),
+    ("Angelfire", "angelfire.com", 1996, "global", 2008),
+    ("FortuneCity", "fortunecity.com", 1997, "global", 2008),
+    ("Rave.ca", "rave.ca", 2000, "north-america", 2008),
+    ("Fotki", "fotki.com", 1998, "global", 2008),
+    ("PictureTrail", "picturetrail.com", 1998, "global", 2008),
+    ("PBase", "pbase.com", 1999, "global", 2008),
+    ("SmugMug", "smugmug.com", 2002, "global", 2008),
+    ("Photobucket", "photobucket.com", 2003, "global", 2008),
+    ("ImageShack", "imageshack.us", 2003, "global", 2008),
+    ("TinyPic", "tinypic.com", 2004, "global", 2008),
+    ("Flickr", "static.flickr.com", 2004, "global", 2008),
+    ("Zooomr", "zooomr.com", 2005, "global", 2008),
+    ("Orkut", "orkut.com", 2004, "global", 2008),
+    ("Hi5", "hi5.com", 2003, "global", 2008),
 ]
 
 COMMONS_COUNTRIES = [
@@ -107,7 +112,7 @@ TAG_PATTERNS = [
     ("flowers", re.compile(r"(flower|flowers|floral|blossom|rose|tulip|orchid|botanical|plant|plants|garden)", re.I)),
 ]
 
-def fetch_json(url: str, retries: int = 2):
+def fetch_json(url: str, retries: int = 3, timeout: int = 14):
     delay = 1.2
     for attempt in range(retries):
         try:
@@ -115,7 +120,7 @@ def fetch_json(url: str, retries: int = 2):
                 url,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json,text/plain,*/*"},
             )
-            with urllib.request.urlopen(req, timeout=14) as response:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
                 return json.loads(response.read().decode("utf-8", "replace"))
         except Exception:
             if attempt == retries - 1:
@@ -165,7 +170,12 @@ def normalize_existing_item(item):
     except Exception:
         return None
 
-    if not 1994 <= year <= 2008:
+    region = str(item.get("region") or "global")
+    if region not in REGIONS:
+        region = "global"
+
+    max_year = 2016 if region == "africa" else 2008
+    if not 1994 <= year <= max_year:
         return None
 
     original = str(item.get("original") or archive)
@@ -173,10 +183,6 @@ def normalize_existing_item(item):
     tags = item.get("tags")
     if not isinstance(tags, list):
         tags = infer_tags(original)
-
-    region = str(item.get("region") or "global")
-    if region not in REGIONS:
-        region = "global"
 
     return {
         "year": year,
@@ -214,7 +220,8 @@ def load_existing_v1_catalog():
     print("existing v1 catalog imported:", len(out))
     return out
 
-def query_wayback(source, domain, start_year, end_year, region):
+def query_wayback_range(source, domain, start_year, end_year, region, limit, timeout, retries=3,
+                        image_types=("jpeg",)):
     params = [
         ("url", domain),
         ("matchType", "domain"),
@@ -223,17 +230,17 @@ def query_wayback(source, domain, start_year, end_year, region):
         ("from", f"{start_year:04d}0101"),
         ("to", f"{end_year:04d}1231"),
         ("filter", "statuscode:200"),
-        ("filter", "mimetype:image/jpeg"),
+        ("filter", "mimetype:image/(?:" + "|".join(image_types) + ")"),
         ("collapse", "digest"),
-        ("limit", "500"),
+        ("limit", str(limit)),
     ]
     url = "https://web.archive.org/cdx/search/cdx?" + urllib.parse.urlencode(params)
 
-    try:
-        rows = fetch_json(url)
-    except Exception as exc:
-        print(f"skip {source} {start_year}-{end_year}: {exc}")
-        return []
+    rows = fetch_json(url, retries=retries, timeout=timeout)
+    if not isinstance(rows, list) or (rows and rows[0] != [
+        "timestamp", "original", "mimetype", "statuscode", "digest", "length"
+    ]):
+        raise ValueError("Unexpected CDX response; this query must be retried")
 
     out = []
     for row in rows[1:] if rows and len(rows) > 1 else []:
@@ -248,17 +255,19 @@ def query_wayback(source, domain, start_year, end_year, region):
         except Exception:
             continue
 
-        if not 1994 <= year <= 2008:
+        if not max(1994, start_year) <= year <= end_year or status != "200":
             continue
-        if not JPEG.search(original):
+        parsed = urllib.parse.urlparse(original)
+        hostname = (parsed.hostname or "").lower()
+        if parsed.scheme not in ("http", "https") or not (hostname == domain or hostname.endswith("." + domain)):
             continue
         if BAD_ASSET.search(original):
             continue
-        if mime != "image/jpeg":
+        if mime not in {"image/" + kind for kind in image_types}:
             continue
         if size and size < MIN_ARCHIVE_BYTES:
             continue
-        if not digest:
+        if not digest or digest == "-":
             continue
 
         out.append({
@@ -275,13 +284,38 @@ def query_wayback(source, domain, start_year, end_year, region):
 
     return out
 
+def query_wayback(source, domain, start_year, end_year, region):
+    try:
+        return query_wayback_range(
+            source, domain, start_year, end_year, region,
+            limit=25000, timeout=120,
+        )
+    except Exception as exc:
+        print(f"chunked retry {source} {start_year}-{end_year}: {exc}")
+
+    out = []
+    y = start_year
+    while y <= end_year:
+        chunk_end = min(y + 2, end_year)
+        try:
+            out.extend(query_wayback_range(
+                source, domain, y, chunk_end, region,
+                limit=8000, timeout=90,
+            ))
+        except Exception as exc:
+            print(f"skip {source} {y}-{chunk_end}: {exc}")
+        y += 3
+        time.sleep(0.5)
+
+    return out
+
 def query_commons(country, region, year):
     params = {
         "action": "query",
         "generator": "categorymembers",
         "gcmtitle": f"Category:{year} photographs of {country}",
         "gcmtype": "file",
-        "gcmlimit": "200",
+        "gcmlimit": "500",
         "prop": "imageinfo|categories",
         "iiprop": "url|size|mime|sha1",
         "cllimit": "200",
@@ -313,8 +347,6 @@ def query_commons(country, region, year):
         if info.get("mime") != "image/jpeg":
             continue
         if not image_url.startswith("https://upload.wikimedia.org/"):
-            continue
-        if min(width, height) < 200 or max(width, height) < 300:
             continue
         if size and size < MIN_ARCHIVE_BYTES:
             continue
@@ -351,8 +383,8 @@ def dedupe_and_balance(rows):
     region_counts = defaultdict(int)
     kept = []
 
-    SOURCE_CAP = 600
-    REGION_CAP = 3500
+    SOURCE_CAP = 3000
+    REGION_CAP = 6000
 
     for item in rows:
         region = item.get("region")
@@ -396,11 +428,9 @@ def main():
     rows.extend(load_existing_v1_catalog())
 
     wayback_jobs = []
-    for source, domain, born, region in WAYBACK_SOURCES:
+    for source, domain, born, region, end_year in WAYBACK_SOURCES:
         y = max(1994, born)
-        while y <= 2008:
-            wayback_jobs.append((source, domain, y, min(y + 2, 2008), region))
-            y += 3
+        wayback_jobs.append((source, domain, y, end_year, region))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         futures = [pool.submit(query_wayback, *job) for job in wayback_jobs]
@@ -409,20 +439,6 @@ def main():
                 rows.extend(future.result())
             except Exception as exc:
                 print("Wayback worker error:", exc)
-
-    commons_jobs = [
-        (country, region, year)
-        for country, region in COMMONS_COUNTRIES
-        for year in range(1994, 2009)
-    ]
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        futures = [pool.submit(query_commons, *job) for job in commons_jobs]
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                rows.extend(future.result())
-            except Exception as exc:
-                print("Commons worker error:", exc)
 
     print("raw candidates:", len(rows))
 
@@ -467,6 +483,14 @@ def main():
 
     MANIFEST_FILE.write_text(
         json.dumps(manifest, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    flat = []
+    for region in REGIONS:
+        flat.extend(shards[region])
+    (ROOT / "catalog.json").write_text(
+        json.dumps(flat, separators=(",", ":"), ensure_ascii=False),
         encoding="utf-8",
     )
 

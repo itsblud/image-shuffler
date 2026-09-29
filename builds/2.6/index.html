@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; img-src https://web.archive.org; style-src 'self'; font-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>Shuffler — Build 2.9</title>
-  <link rel="stylesheet" href="./styles.css?v=2.9">
+  <title>Image Viewer</title>
+  <link rel="stylesheet" href="./styles.css?v=2.6">
 </head>
 <body>
   <main id="app">
@@ -49,18 +49,18 @@
 
   <div id="overlay">
     <section id="panel" role="dialog" aria-modal="true" aria-label="Controls">
-      <div class="section row release-info">
-        <span>Build 2.9</span>
-        <a href="./releases.html">All releases</a>
-      </div>
       <div class="section">
-        <h3>Display</h3>
+        <h3>Appearance</h3>
         <div class="row">
           <span>Theme</span>
           <button id="themeToggle" class="smallbtn" type="button">Switch to Dark Mode</button>
         </div>
+      </div>
+
+      <div class="section">
+        <h3>Auto-play</h3>
         <div class="row">
-          <span>Auto-play</span>
+          <span>Interval</span>
           <select id="autoplaySeconds" aria-label="Auto-play interval">
             <option value="5">5 sec</option>
             <option value="8" selected>8 sec</option>
@@ -70,35 +70,30 @@
             <option value="30">30 sec</option>
           </select>
         </div>
+        <div class="muted">Press Play in the viewer to start. The interface fades away. Tap the image to pause on that exact image and bring the controls back.</div>
       </div>
 
       <div class="section">
-        <h3>Era</h3>
-        <select id="eraSelect" class="fullwidth" aria-label="Era">
-          <option value="all" data-from="1994" data-to="2008" selected>All years</option>
-          <option value="early" data-from="1994" data-to="1999">Early web</option>
-          <option value="dotcom" data-from="2000" data-to="2003">Dot-com boom</option>
-          <option value="mid" data-from="2004" data-to="2006">Mid-2000s</option>
-          <option value="late" data-from="2007" data-to="2008">Web 2.0</option>
-        </select>
+        <h3>Year Range</h3>
         <div id="years" class="rangevalue">1994 – 2008</div>
-        <div class="muted">Selecting Africa switches to Africa-only mode, with years up to 2016.</div>
+        <input id="yearFrom" type="range" min="1994" max="2008" value="1994" step="1" aria-label="Earliest year">
+        <input id="yearTo" type="range" min="1994" max="2008" value="2008" step="1" aria-label="Latest year">
       </div>
 
       <div class="section">
-        <h3>Regions</h3>
+        <h3>Region Mix</h3>
         <div class="checkgrid">
-          <label class="checkitem"><input id="region-north-america" type="checkbox" checked>North America</label><label class="checkitem"><input id="region-latin-america-caribbean" type="checkbox" checked>Latin America / Caribbean</label><label class="checkitem"><input id="region-africa" type="checkbox">Africa</label><label class="checkitem"><input id="region-south-asia" type="checkbox" checked>South Asia</label><label class="checkitem"><input id="region-east-asia" type="checkbox" checked>East Asia</label><label class="checkitem"><input id="region-mena" type="checkbox" checked>Middle East / North Africa</label><label class="checkitem"><input id="region-europe" type="checkbox" checked>Europe</label><label class="checkitem"><input id="region-global" type="checkbox" checked>Global / Unknown</label>
+          <label class="checkitem"><input id="region-north-america" type="checkbox" checked>North America</label><label class="checkitem"><input id="region-latin-america-caribbean" type="checkbox" checked>Latin America / Caribbean</label><label class="checkitem"><input id="region-africa" type="checkbox" checked>Africa</label><label class="checkitem"><input id="region-south-asia" type="checkbox" checked>South Asia</label><label class="checkitem"><input id="region-east-asia" type="checkbox" checked>East Asia</label><label class="checkitem"><input id="region-mena" type="checkbox" checked>Middle East / North Africa</label><label class="checkitem"><input id="region-europe" type="checkbox" checked>Europe</label><label class="checkitem"><input id="region-global" type="checkbox" checked>Global / Unknown</label>
         </div>
+        <div class="muted">A region is chosen first, then an image, so a giant archive cannot drown out smaller regional pools.</div>
       </div>
 
       <div class="section">
         <h3>Image Types</h3>
-        <label class="checkitem"><input id="filter-social-media" type="checkbox" checked>Social media posts</label>
-        <div class="muted">Includes BlackPlanet and other social-network sites. Turn off to exclude images from these sources.</div>
         <div class="checkgrid">
           <label class="checkitem"><input id="filter-people" type="checkbox" checked>People / everyday life</label><label class="checkitem"><input id="filter-signs" type="checkbox" checked>Signs / graphics / advertising</label><label class="checkitem"><input id="filter-fashion" type="checkbox" checked>Fashion / clothing</label><label class="checkitem"><input id="filter-vehicles" type="checkbox" checked>Vehicles / transportation</label><label class="checkitem"><input id="filter-interiors" type="checkbox" checked>Interiors / domestic life</label><label class="checkitem"><input id="filter-objects" type="checkbox" checked>Objects / products / packaging</label><label class="checkitem"><input id="filter-religion" type="checkbox" checked>Religion / ritual</label><label class="checkitem"><input id="filter-animals" type="checkbox" checked>Animals / pets</label><label class="checkitem"><input id="filter-architecture" type="checkbox" >Architecture / buildings</label><label class="checkitem"><input id="filter-landscape" type="checkbox" >Nature / landscape</label><label class="checkitem"><input id="filter-flowers" type="checkbox" >Plants / flowers</label>
         </div>
+        <div class="muted">Architecture, landscape and flowers are off by default. Old-web metadata is imperfect, so filtering is best-effort.</div>
       </div>
 
       <div id="panelbuttons">
@@ -108,6 +103,6 @@
     </section>
   </div>
 
-  <script src="./app.js?v=2.9"></script>
+  <script src="./app.js?v=2.6"></script>
 </body>
 </html>

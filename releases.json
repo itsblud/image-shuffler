@@ -1,0 +1,17 @@
+[
+  {
+    "version": "2.9",
+    "notes": "Social-media toggle published; release history and permanent build links added. New source collectors implemented, but archive timeouts prevented adding images.",
+    "count": 30787
+  },
+  {
+    "version": "2.8",
+    "notes": "Recovered local build with the Social media posts toggle and improved image loading.",
+    "count": 30787
+  },
+  {
+    "version": "2.6",
+    "notes": "Previously published build. Preserved from the existing public site; no social-media toggle.",
+    "count": 324
+  }
+]
