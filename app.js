@@ -6,6 +6,7 @@ const frameEl = $('#frame');
 const backBtn = $('#back');
 const playBtn = $('#play');
 const nextBtn = $('#next');
+const edgeNextBtn = $('#edgeNext');
 const loaderEl = $('#loader');
 
 const overlay = $('#overlay');
@@ -216,7 +217,7 @@ function setMessage(text) {
 }
 
 function itemKey(item) {
-  return String(item.phash || item.visualKey || item.digest || item.archive);
+  return String(item.digest || item.visualKey || item.archive);
 }
 
 function itemAllowed(item) {
@@ -575,6 +576,11 @@ backBtn.addEventListener('click', () => {
 });
 
 nextBtn.addEventListener('click', async () => {
+  pauseAutoplay(true);
+  await advance();
+});
+
+edgeNextBtn.addEventListener('click', async () => {
   pauseAutoplay(true);
   await advance();
 });
