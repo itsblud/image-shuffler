@@ -1,0 +1,21 @@
+{
+  "version": "2.11",
+  "notes": "Add six selectable device-inspired skins with CSS-drawn controls and larger mobile moderation buttons.",
+  "catalog_count": 30787,
+  "sha256": {
+    "index.html": "ef271088b439a20c89e44ea1ef40d3812c01d6302d773f1f490d4ce010b9a114",
+    "app.js": "8e2f7d4b588ccf2d89428b89e2cbb938902edf8235fa150b90933358f92733b9",
+    "styles.css": "4f501ec78380ba6555308140aeeed6296e87ae6db30f5d818552cac5367c7941",
+    "pixel.woff2": "59c3d73985b657bdb1065bf2d4ddeb7bd889c0c0f2663d6e65a6ce8d18916d68",
+    "pixel-bold.woff2": "ed4cc16bf69e9727dc4cf289565c612e11b308772084e1ad87acfd2abb89496e",
+    "catalog/manifest.json": "cd8670310173ab1f546ef4499407460c4ad4e4de32570fb7f6410ae6c2f7f5f4",
+    "catalog/regions/north-america.json": "99149f1d5fa09d829c4e193b4d4eca73b50d9266689cb2a2b565c70791c2ce71",
+    "catalog/regions/latin-america-caribbean.json": "30ee87f0c22ab8d6dd2a5b556d3045bbe6f361de335ea2db78977f91ce260cca",
+    "catalog/regions/africa.json": "85983e5f6d292fe9de3872681a28c33c56cdd019a826222aa66d3c79a1ac8959",
+    "catalog/regions/south-asia.json": "24ae5074876d83262a92dad1ee0ae60b8112324b6f7f6aba2763da276cf88e8f",
+    "catalog/regions/east-asia.json": "aceb43b2c03d32cbd3c103e1874acdd6d6aa6650f2c40b66e90a4a1399163932",
+    "catalog/regions/mena.json": "1151187bc50b35590845bd667d5a87e06ba34438f434617c9974b6986598faa9",
+    "catalog/regions/europe.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "catalog/regions/global.json": "712d6c4b09019092fa92ca5d9b1ea0ac0493ae5a66c02574bf2093e151bf07db"
+  }
+}

@@ -1,5 +1,10 @@
 [
   {
+    "version": "2.11",
+    "notes": "Add six selectable device-inspired skins with CSS-drawn controls and larger mobile moderation buttons.",
+    "count": 30787
+  },
+  {
     "version": "2.10",
     "notes": "Add a Hide NSFW filter, manual NSFW flags, image omission, and a Settings moderation list.",
     "count": 30787
