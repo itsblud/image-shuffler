@@ -14,7 +14,7 @@ import tempfile
 from zipfile import ZipFile, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parent
-FILES = ['index.html', 'app.js', 'styles.css', 'pixel.woff2', 'pixel-bold.woff2', 'catalog/manifest.json']
+FILES = ['index.html', 'app.js', 'styles.css', 'shared-moderation.js', 'supabase/shared-moderation.sql', 'pixel.woff2', 'pixel-bold.woff2', 'catalog/manifest.json']
 
 
 def freeze(version, source, notes, root=ROOT):

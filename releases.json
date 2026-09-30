@@ -1,5 +1,10 @@
 [
   {
+    "version": "2.14",
+    "notes": "Add individual source toggles to Settings, with saved preferences and catalog source counts.",
+    "count": 30787
+  },
+  {
     "version": "2.13",
     "notes": "Reduce waits between images with concurrent preloading and immediate display of the first ready image.",
     "count": 30787
