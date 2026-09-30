@@ -1,5 +1,10 @@
 [
   {
+    "version": "2.15",
+    "notes": "Show the image source beneath each image in subtle small text.",
+    "count": 30787
+  },
+  {
     "version": "2.14",
     "notes": "Add individual source toggles to Settings, with saved preferences and catalog source counts.",
     "count": 30787
